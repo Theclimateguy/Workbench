@@ -4,7 +4,7 @@
 #   support-ctl model fast|deep             switch the LLM profile (mutually exclusive)
 #   support-ctl target add NAME USER@HOST   register a workstation and install the agent key there
 #   support-ctl target list|test NAME
-#   support-ctl docs status                 token estimate for docs/ in the agent workspace
+#   support-ctl docs status|reload          token estimate for docs/; reload = restart the agent engine to pick up new docs
 #   support-ctl net status|peers|lan|direct RJ45 mode (auto: lan→direct fallback) and hosts on the direct link
 #   support-ctl agent                       open the agent TUI (OpenCode) in the workspace
 #   support-ctl web [password]              start/enable the web UI on :8080 (user "support"; sets the password)
@@ -92,8 +92,13 @@ cmd_docs() {
       local files; files=$(find "$WORKSPACE/docs" -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
       # rough estimate: ~3.5 bytes/token for mixed RU/EN markdown
       echo "  $files files, $bytes bytes, ~$(( bytes * 2 / 7 )) tokens (context limit in opencode.json: 131072)"
-      [ $(( bytes * 2 / 7 )) -gt 100000 ] && echo "  WARNING: docs exceed ~100K tokens; split into a system card + search (PLAN.md §8.3)" || true ;;
-    *) die "usage: support-ctl docs status" ;;
+      [ $(( bytes * 2 / 7 )) -gt 100000 ] && echo "  WARNING: docs exceed ~100K tokens; split into a system card + search (PLAN.md §8.3)" || true
+      find "$WORKSPACE/docs" -type f ! -name '*.md' 2>/dev/null | head -5 | sed 's/^/  ignored (not .md): /' ;;
+    reload)
+      cmd_docs status
+      sudo systemctl restart support-opencode && sleep 3 && sudo systemctl restart support-ui
+      echo "  agent engine restarted; start a NEW session so the docs are in context" ;;
+    *) die "usage: support-ctl docs status|reload" ;;
   esac
 }
 
