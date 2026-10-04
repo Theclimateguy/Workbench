@@ -42,6 +42,12 @@ services:
     <<: *vllm
     container_name: llm-deep
     profiles: [deep]
+    environment:            # NVIDIA Spark recipe for Nemotron 3 Super NVFP4
+      - HF_HUB_OFFLINE=1
+      - VLLM_NVFP4_GEMM_BACKEND=marlin
+      - VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+      - VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm
+      - VLLM_USE_FLASHINFER_MOE_FP4=0
     command: >
       ${MODEL_PATH}
       --served-model-name ${SERVED_NAME:-deep}

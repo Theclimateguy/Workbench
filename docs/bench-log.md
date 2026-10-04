@@ -8,3 +8,4 @@
 | 2026-10-04 | fast | Qwen3.6-35B-A3B-NVFP4, vllm/vllm-openai:v0.28.0, flashinfer+marlin, fp8 KV, ctx 131K, util 0.45 | 79.2 | 71 мс | 311 (39/поток) | 5.2K промпт: 66 → 75 tok/s | OK | веса 20.4 ГиБ, KV 27.3 ГиБ (2.59M токенов), старт 5 мин |
 | 2026-10-04 | fast | то же + MTP 3 токена (без явного --moe-backend) | **94.7** | 85 мс | 357 (45/поток) | 94 → 96 tok/s | OK | KV 24.9 ГиБ, старт 6 мин |
 | 2026-10-04 | fast | MTP + `--moe-backend marlin` | — | — | — | — | — | падает: marlin не поддержан для неквантованного MTP-драфта |
+| 2026-10-04 | deep | Nemotron-3-Super-120B-A12B-NVFP4 + MTPv2 draft (triton), vLLM 0.28, marlin, fp8 KV, ctx 131K, util 0.85, max-num-seqs 4 | 24.1 | 335 мс | 4 потока: 60.7 (15/поток) | 5.2K промпт: 19.9 → 22.3 tok/s | OK | веса 75.1 ГиБ, KV 23.7 ГиБ (2.98M токенов), старт 12 мин |
