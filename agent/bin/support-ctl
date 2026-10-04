@@ -6,6 +6,7 @@
 #   support-ctl target list|test NAME
 #   support-ctl docs status|reload          token estimate for docs/; reload = restart the agent engine to pick up new docs
 #   support-ctl net status|peers|lan|direct RJ45 mode (auto: lan→direct fallback) and hosts on the direct link
+#   support-ctl net hotspot on|off          Wi-Fi access point GX10-Support (for a laptop/phone in the field)
 #   support-ctl agent                       open the agent TUI (OpenCode) in the workspace
 #   support-ctl web [password]              start/enable the web UI on :8080 (user "support"; sets the password)
 #   support-ctl bench                       run tests/bench.py against the active profile
@@ -117,7 +118,29 @@ cmd_net() {
       ip -6 neigh show dev "$IF" | awk '$1 ~ /^fe80/ {print "    " $1 "%'"$IF"'  " $3}' ;;
     lan|direct)
       sudo nmcli con up "$sub" >/dev/null && cmd_net status ;;
-    *) die "usage: support-ctl net status|peers|lan|direct" ;;
+    hotspot)
+      local WIFI=${WIFI_IF:-wlP9s9} SSID=${HOTSPOT_SSID:-GX10-Support}
+      case "${2:-on}" in
+        on)
+          sudo install -d -m 755 /etc/support
+          if ! sudo test -s /etc/support/hotspot.env; then
+            printf 'HOTSPOT_PASSWORD=%s\n' "$(head -c 9 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 10)" | sudo tee /etc/support/hotspot.env >/dev/null
+            sudo chmod 600 /etc/support/hotspot.env
+          fi
+          local pw; pw=$(sudo sed -n 's/^HOTSPOT_PASSWORD=//p' /etc/support/hotspot.env)
+          if ! nmcli -t -f NAME con show | grep -qx hotspot; then
+            sudo nmcli con add type wifi ifname "$WIFI" con-name hotspot ssid "$SSID" \
+              802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared ipv4.addresses 10.42.0.1/24 \
+              ipv6.method disabled wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pw" connection.autoconnect no >/dev/null
+          fi
+          sudo nmcli con up hotspot >/dev/null
+          echo "  hotspot ON: SSID $SSID, password $pw, GX10 address 10.42.0.1 -> http://10.42.0.1:8080" ;;
+        off)
+          sudo nmcli con down hotspot >/dev/null 2>&1 || true
+          echo "  hotspot OFF (Wi-Fi client reconnects to known networks automatically)" ;;
+        *) die "usage: support-ctl net hotspot on|off" ;;
+      esac ;;
+    *) die "usage: support-ctl net status|peers|lan|direct|hotspot on|off" ;;
   esac
 }
 
