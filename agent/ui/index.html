@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spark Support</title>
+<style>
+  :root { --bg:#f6f7f9; --panel:#fff; --ink:#1b1f24; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb;
+          --ok:#15803d; --warn:#b45309; --bad:#b91c1c; --tool:#f3f4f6; --user:#e8f0fe; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1115; --panel:#171a21; --ink:#e6e8eb; --muted:#9aa3ad; --line:#2a2f3a; --accent:#60a5fa;
+            --tool:#1f2430; --user:#1e2a44; }
+  }
+  * { box-sizing:border-box } body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--ink) }
+  .app { display:grid; grid-template-columns: 280px 1fr; height:100vh }
+  aside { background:var(--panel); border-right:1px solid var(--line); padding:14px; overflow:auto; display:flex; flex-direction:column; gap:14px }
+  main { display:flex; flex-direction:column; min-width:0 }
+  h1 { font-size:16px; margin:0 } h2 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 6px }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:var(--tool) }
+  .pill.ok { color:var(--ok) } .pill.bad { color:var(--bad) } .pill.warn { color:var(--warn) }
+  button { font:inherit; border:1px solid var(--line); background:var(--panel); color:var(--ink); border-radius:8px; padding:6px 10px; cursor:pointer }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent) }
+  button.danger { color:var(--bad) } button:disabled { opacity:.5; cursor:default }
+  .sessions a { display:block; padding:6px 8px; border-radius:6px; color:inherit; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .sessions a.active, .sessions a:hover { background:var(--tool) }
+  #log { flex:1; overflow:auto; padding:18px 24px; display:flex; flex-direction:column; gap:12px }
+  .msg { max-width: 920px } .msg.user .bubble { background:var(--user) }
+  .bubble { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 14px; white-space:pre-wrap; word-break:break-word }
+  .meta { font-size:12px; color:var(--muted); margin:0 0 4px }
+  details.tool { background:var(--tool); border-radius:8px; padding:6px 10px; margin:6px 0; font-size:13px }
+  details.tool summary { cursor:pointer } details.tool pre { white-space:pre-wrap; margin:6px 0 0; max-height:320px; overflow:auto; font-size:12px }
+  details.reason { font-size:13px; color:var(--muted) } details.reason pre { white-space:pre-wrap; max-height:200px; overflow:auto }
+  .perm { border:2px solid var(--warn); background:var(--panel); border-radius:12px; padding:12px 14px; max-width:920px }
+  .perm pre { background:var(--tool); padding:8px; border-radius:6px; white-space:pre-wrap; max-height:260px; overflow:auto; font-size:13px }
+  .perm .actions { display:flex; gap:8px; margin-top:8px }
+  form { display:flex; gap:8px; padding:12px 24px; border-top:1px solid var(--line); background:var(--panel) }
+  textarea { flex:1; font:inherit; resize:vertical; min-height:44px; max-height:200px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink) }
+  .audit { font-size:12px; color:var(--muted) } .audit div { padding:2px 0; border-bottom:1px dashed var(--line); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .err { color:var(--bad); font-size:13px }
+  .topbar { display:flex; gap:10px; align-items:center; padding:10px 24px; border-bottom:1px solid var(--line); background:var(--panel) }
+  .spacer { flex:1 }
+  @media (max-width: 860px) { .app { grid-template-columns: 1fr } aside { display:none } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>Spark Support</h1>
+    <div><h2>LLM</h2><div id="llm"></div></div>
+    <div><h2>Цели</h2><div id="targets" class="audit"></div></div>
+    <div><h2>Документация</h2><div id="docs" class="audit"></div></div>
+    <div>
+      <h2>Сессии <button id="newSession" style="float:right;padding:2px 8px">+ новая</button></h2>
+      <div id="sessions" class="sessions"></div>
+    </div>
+    <div><h2>Аудит (последние)</h2><div id="audit" class="audit"></div></div>
+  </aside>
+  <main>
+    <div class="topbar">
+      <span id="title">Выбери или создай сессию</span>
+      <span class="spacer"></span>
+      <span id="busy" class="pill" style="display:none">думает…</span>
+      <button id="abort" class="danger" style="display:none">Стоп</button>
+    </div>
+    <div id="log"></div>
+    <form id="form">
+      <textarea id="input" placeholder="Опиши проблему или задачу для workstation… (Enter — отправить, Shift+Enter — новая строка)"></textarea>
+      <button class="primary" id="send" type="submit">Отправить</button>
+    </form>
+  </main>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+let sid = location.hash.slice(1) || null, pollTimer = null, lastJSON = "";
+const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const fmt = s => esc(s).replace(/```([\s\S]*?)```/g, (m, c) => `<pre style="background:var(--tool);padding:8px;border-radius:6px;overflow:auto">${c}</pre>`)
+                       .replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+const api = async (path, opt={}) => {
+  const r = await fetch(location.origin + path, {headers:{"Content-Type":"application/json"}, ...opt});
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  return r.json();
+};
+
+async function refreshState() {
+  try {
+    const s = await api("/api/state");
+    $("#llm").innerHTML = s.llm.up
+      ? `<span class="pill ok">online</span> ${esc(s.llm.models.join(", "))}<br><span class="audit">fast: ${s.profiles.fast} · deep: ${s.profiles.deep}</span>`
+      : `<span class="pill bad">offline</span> <span class="audit">fast: ${s.profiles.fast} · deep: ${s.profiles.deep}</span>`;
+    $("#targets").innerHTML = s.targets.length ? s.targets.map(t => `<div><b>${esc(t.name)}</b> ${esc(t.user)}@${esc(t.host)}:${esc(t.port)}</div>`).join("")
+                                               : "<div>нет — <code>support-ctl target add ws user@host</code></div>";
+    $("#docs").innerHTML = `<div>${s.docs.files} файлов, ~${s.docs.tokens_est.toLocaleString("ru")} токенов</div>`;
+    $("#sessions").innerHTML = s.sessions.map(x => `<a href="#${x.id}" class="${x.id===sid?"active":""}">${esc(x.title || x.id)}</a>`).join("");
+    if (!sid && s.sessions.length) { location.hash = s.sessions[0].id; }
+    const a = await api("/api/audit?n=12");
+    $("#audit").innerHTML = a.map(e => `<div title="${esc(JSON.stringify(e))}">${esc((e.ts||"").slice(11,19))} ${esc(e.tool)} ${esc(e.cmd||e.path||"")} ${e.rejected?"⛔":""} ${e.rc!=null?"rc="+e.rc:""}</div>`).join("");
+  } catch (e) { $("#llm").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+
+function renderPerm(p, calls) {
+  const call = calls[p.tool?.callID] || {};
+  const i = Object.keys(p.metadata?.input || {}).length ? p.metadata.input : (call.input || p.metadata || {});
+  const tool = call.tool || p.metadata?.tool || p.permission || "";
+  const fields = ["target","cmd","path","reason","mode","wait_seconds"].filter(k => i[k] !== undefined).map(k => `${k}: ${i[k]}`).join("\n");
+  const content = i.content !== undefined ? `\n--- content ---\n${i.content}` : "";
+  return `<div class="perm" data-pid="${p.id}">
+    <div><b>Требуется подтверждение:</b> <code>${esc(tool)}</code></div>
+    <pre>${esc(fields + content) || esc(JSON.stringify(i, null, 1))}</pre>
+    <div class="actions">
+      <button class="primary" data-resp="once">Разрешить</button>
+      <button data-resp="always">Разрешить и не спрашивать</button>
+      <button class="danger" data-resp="reject">Отклонить</button>
+    </div></div>`;
+}
+
+function renderMessages(d) {
+  const calls = {};
+  d.messages.forEach(m => m.parts.forEach(p => { if (p.type === "tool" && p.callID) calls[p.callID] = p; }));
+  const html = d.messages.map(m => {
+    const parts = m.parts.map(p => {
+      if (p.type === "text") return `<div class="bubble">${fmt(p.text)}</div>`;
+      if (p.type === "reasoning") return `<details class="reason"><summary>рассуждение</summary><pre>${esc(p.text)}</pre></details>`;
+      if (p.type === "tool") {
+        const icon = {completed:"✓", error:"✗", running:"…", pending:"…"}[p.status] || "·";
+        const inp = Object.entries(p.input||{}).map(([k,v]) => `${k}=${typeof v==="string"?v:JSON.stringify(v)}`).join("  ");
+        return `<details class="tool"><summary>${icon} <b>${esc(p.tool)}</b> ${esc(inp).slice(0,160)}</summary><pre>${esc(p.output)}</pre></details>`;
+      }
+      return "";
+    }).join("");
+    const err = m.error ? `<div class="err">Ошибка: ${esc(m.error)}</div>` : "";
+    return `<div class="msg ${m.role}"><div class="meta">${m.role==="user"?"Ты":"Агент"} · ${m.time?new Date(m.time).toLocaleTimeString("ru"):""}</div>${parts}${err}</div>`;
+  }).join("") + d.pending.map(p => renderPerm(p, calls)).join("");
+  if (html !== lastJSON) {
+    const atBottom = $("#log").scrollTop + $("#log").clientHeight >= $("#log").scrollHeight - 40;
+    $("#log").innerHTML = html; lastJSON = html;
+    if (atBottom) $("#log").scrollTop = $("#log").scrollHeight;
+  }
+  $("#busy").style.display = d.busy ? "" : "none";
+  $("#abort").style.display = d.busy ? "" : "none";
+  $("#send").disabled = !sid;
+}
+
+async function poll() {
+  if (!sid) return;
+  try { renderMessages(await api(`/api/session/${sid}`)); }
+  catch (e) { $("#log").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+
+function selectSession(id) {
+  sid = id; lastJSON = ""; $("#title").textContent = id ? `Сессия ${id.slice(-6)}` : "Выбери или создай сессию";
+  document.querySelectorAll(".sessions a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#"+id));
+  poll();
+}
+
+window.addEventListener("hashchange", () => selectSession(location.hash.slice(1)));
+$("#newSession").onclick = async () => { const s = await api("/api/session", {method:"POST", body: JSON.stringify({title: "Сессия " + new Date().toLocaleString("ru")})}); await refreshState(); location.hash = s.id; };
+$("#form").onsubmit = async e => {
+  e.preventDefault(); const text = $("#input").value.trim(); if (!text || !sid) return;
+  $("#input").value = ""; await api(`/api/session/${sid}/prompt`, {method:"POST", body: JSON.stringify({text})}); poll();
+};
+$("#input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form").requestSubmit(); } });
+$("#abort").onclick = () => api(`/api/session/${sid}/abort`, {method:"POST"});
+$("#log").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-resp]"); if (!b) return;
+  const pid = b.closest(".perm").dataset.pid; b.disabled = true;
+  await api(`/api/session/${sid}/permission/${pid}`, {method:"POST", body: JSON.stringify({response: b.dataset.resp})}); poll();
+});
+
+refreshState(); if (sid) selectSession(sid);
+setInterval(poll, 1500); setInterval(refreshState, 10000);
+</script>
+</body>
+</html>

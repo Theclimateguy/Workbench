@@ -1,0 +1,19 @@
+[Unit]
+Description=Support agent web UI (thin front over OpenCode server)
+After=support-opencode.service
+Requires=support-opencode.service
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/opt/support/ui
+EnvironmentFile=/etc/support/web.env
+Environment=OPENCODE_URL=http://127.0.0.1:4096
+Environment=SUPPORT_WORKSPACE=/opt/support/workspace
+ExecStart=/opt/support/venv/bin/uvicorn support_ui:app --host 0.0.0.0 --port 8080 --log-level warning
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

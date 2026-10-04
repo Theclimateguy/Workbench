@@ -7,6 +7,7 @@
 #   support-ctl docs status                 token estimate for docs/ in the agent workspace
 #   support-ctl net status|peers|lan|direct RJ45 mode (auto: lan→direct fallback) and hosts on the direct link
 #   support-ctl agent                       open the agent TUI (OpenCode) in the workspace
+#   support-ctl web [password]              start/enable the web UI on :8080 (user "support"; sets the password)
 #   support-ctl bench                       run tests/bench.py against the active profile
 set -euo pipefail
 
@@ -120,6 +121,24 @@ cmd_agent() {
   cd "$WORKSPACE" && exec "$HOME/.opencode/bin/opencode" "$@"
 }
 
+cmd_web() {
+  local pw=${1:-}
+  sudo install -d -m 755 /etc/support
+  if [ -n "$pw" ] || ! sudo test -s /etc/support/web.env; then
+    [ -n "$pw" ] || pw=$(head -c 12 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 12)
+    printf 'OPENCODE_SERVER_PASSWORD=%s\nSUPPORT_UI_PASSWORD=%s\n' "$pw" "$pw" | sudo tee /etc/support/web.env >/dev/null
+    sudo chmod 600 /etc/support/web.env
+    echo "web password set (user: support): $pw"
+  fi
+  sudo cp "$STACK_DIR/systemd/support-opencode.service" "$STACK_DIR/systemd/support-ui.service" /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl disable --now support-web >/dev/null 2>&1 || true
+  sudo systemctl enable --now support-opencode support-ui >/dev/null
+  sudo systemctl restart support-opencode support-ui
+  sleep 4
+  systemctl is-active --quiet support-ui && echo "web UI: http://$(hostname -I | awk '{print $1}'):8080  (login: support)" || die "support-ui failed: journalctl -u support-ui"
+}
+
 cmd_bench() { python3 "$SUPPORT_DIR/tests/bench.py" "$@"; }
 
 case "${1:-}" in
@@ -130,5 +149,6 @@ case "${1:-}" in
   net)    shift; cmd_net "$@" ;;
   agent)  shift; cmd_agent "$@" ;;
   bench)  shift; cmd_bench "$@" ;;
+  web)    shift; cmd_web "$@" ;;
   *) sed -n '2,10p' "$0"; exit 1 ;;
 esac

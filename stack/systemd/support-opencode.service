@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenCode headless server (agent engine for support-ui)
+After=network-online.target llm@fast.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/opt/support/workspace
+# OPENCODE_SERVER_PASSWORD (basic auth, user "opencode") lives in /etc/support/web.env, mode 600
+EnvironmentFile=/etc/support/web.env
+Environment=HOME=/home/admin
+ExecStart=/home/admin/.opencode/bin/opencode serve --hostname 127.0.0.1 --port 4096
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
