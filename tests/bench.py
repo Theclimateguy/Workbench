@@ -48,6 +48,8 @@ def one_completion(url, model, prompt, max_tokens, stream=False):
         "temperature": 0,
         "stream": stream,
     }
+    if stream:
+        body["stream_options"] = {"include_usage": True}
     t0 = time.time()
     resp = post(url, body)
     if not stream:
@@ -58,17 +60,25 @@ def one_completion(url, model, prompt, max_tokens, stream=False):
                 "prompt_tokens": data["usage"]["prompt_tokens"]}
     ttft = None
     n = 0
+    usage = None
     for line in resp:
         line = line.decode().strip()
         if not line.startswith("data:") or line == "data: [DONE]":
             continue
         chunk = json.loads(line[5:])
+        if chunk.get("usage"):
+            usage = chunk["usage"]
+        if not chunk.get("choices"):
+            continue
         delta = chunk["choices"][0].get("delta", {})
         if delta.get("content") or delta.get("reasoning_content") or delta.get("reasoning"):
             if ttft is None:
                 ttft = time.time() - t0
             n += 1
     dt = time.time() - t0
+    # With speculative decoding a chunk may carry several tokens: trust usage, not chunk count.
+    if usage:
+        n = usage["completion_tokens"]
     return {"tokens": n, "seconds": dt, "tps": n / dt if dt else 0, "ttft": ttft, "prompt_tokens": None}
 
 
