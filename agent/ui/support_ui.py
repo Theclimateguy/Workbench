@@ -42,9 +42,14 @@ client = httpx.AsyncClient(base_url=OPENCODE_URL, auth=(OC_USER, OC_PASS) if OC_
 
 # ---------- auth ----------
 
+def _is_local(request: Request) -> bool:
+    # Someone sitting at the GX10 itself (desktop launcher) is trusted; LAN/hotspot clients must log in.
+    return bool(request.client) and request.client.host in ("127.0.0.1", "::1")
+
+
 @app.middleware("http")
 async def basic_auth(request: Request, call_next):
-    if UI_PASS:
+    if UI_PASS and not _is_local(request):
         hdr = request.headers.get("authorization", "")
         ok = False
         if hdr.startswith("Basic "):

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Spark Support
+Comment=Open the support agent web interface
+Comment[ru]=Открыть интерфейс агента техподдержки
+Exec=/usr/local/bin/support-ctl gui
+Icon=spark-support
+Terminal=false
+Categories=Utility;Network;
+Keywords=support;agent;llm;workstation;
+StartupNotify=true

@@ -8,6 +8,8 @@
 #   support-ctl net status|peers|lan|direct RJ45 mode (auto: lan→direct fallback) and hosts on the direct link
 #   support-ctl net hotspot on|off|auto on|auto off   Wi-Fi access point GX10-Support; auto = start at boot when no known Wi-Fi is around
 #   support-ctl agent                       open the agent TUI (OpenCode) in the workspace
+#   support-ctl gui                         open the web UI in the default browser (desktop shortcut)
+#   support-ctl install-desktop             install the Spark Support icon + launcher for the current user
 #   support-ctl web [password]              start/enable the web UI on :8080 (user "support"; sets the password)
 #   support-ctl bench                       run tests/bench.py against the active profile
 set -euo pipefail
@@ -192,6 +194,30 @@ cmd_web() {
   systemctl is-active --quiet support-ui && echo "web UI: http://$(hostname -I | awk '{print $1}'):8080  (login: support)" || die "support-ui failed: journalctl -u support-ui"
 }
 
+cmd_gui() {
+  # Wait briefly for the UI to answer (right after boot it may still be starting), then open the browser.
+  for _ in $(seq 1 20); do curl -s -o /dev/null -m 2 http://127.0.0.1:8080/api/health && break; sleep 1; done
+  local url="http://localhost:8080"
+  # DGX OS ships Firefox (snap) but no default browser is registered, so xdg-open alone does nothing.
+  if command -v firefox >/dev/null; then exec firefox --new-window "$url" >/dev/null 2>&1; fi
+  exec xdg-open "$url" >/dev/null 2>&1
+}
+
+cmd_install_desktop() {
+  local src=$SUPPORT_DIR/desktop
+  install -Dm644 "$src/spark-support.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/spark-support.svg"
+  install -Dm755 "$src/spark-support.desktop" "$HOME/.local/share/applications/spark-support.desktop"
+  mkdir -p "$HOME/Desktop" && install -m755 "$src/spark-support.desktop" "$HOME/Desktop/spark-support.desktop"
+  gtk-update-icon-cache -q -f -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+  update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+  # GNOME shows an untrusted-launcher warning until the file is marked trusted (needs the user's session bus).
+  local uid; uid=$(id -u)
+  DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/$uid/bus} \
+    gio set "$HOME/Desktop/spark-support.desktop" metadata::trusted true 2>/dev/null || true
+  xdg-settings set default-web-browser firefox_firefox.desktop 2>/dev/null || true
+  echo "desktop launcher installed: ~/Desktop/spark-support.desktop (+ app menu entry 'Spark Support')"
+}
+
 cmd_bench() { python3 "$SUPPORT_DIR/tests/bench.py" "$@"; }
 
 case "${1:-}" in
@@ -203,5 +229,7 @@ case "${1:-}" in
   agent)  shift; cmd_agent "$@" ;;
   bench)  shift; cmd_bench "$@" ;;
   web)    shift; cmd_web "$@" ;;
+  gui)    cmd_gui ;;
+  install-desktop) cmd_install_desktop ;;
   *) sed -n '2,10p' "$0"; exit 1 ;;
 esac
