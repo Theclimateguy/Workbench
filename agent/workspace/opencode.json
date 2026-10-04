@@ -1,0 +1,47 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "spark": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Spark local vLLM",
+      "options": { "baseURL": "http://127.0.0.1:8000/v1", "apiKey": "local" },
+      "models": {
+        "fast": { "name": "Qwen3.6-35B-A3B NVFP4 (fast)", "limit": { "context": 131072, "output": 16384 } },
+        "deep": { "name": "Nemotron 3 Super 120B NVFP4 (deep)", "limit": { "context": 131072, "output": 16384 } }
+      }
+    }
+  },
+  "model": "spark/fast",
+  "small_model": "spark/fast",
+  "instructions": ["docs/**/*.md"],
+  "mcp": {
+    "target-host": {
+      "type": "local",
+      "command": ["/opt/support/venv/bin/python", "/opt/support/mcp/target_host.py"],
+      "enabled": true,
+      "environment": {
+        "SUPPORT_TARGETS_DIR": "/opt/support/targets",
+        "SUPPORT_AGENT_KEY": "/opt/support/keys/agent_ed25519",
+        "SUPPORT_AUDIT_LOG": "/var/log/support/audit.jsonl"
+      }
+    }
+  },
+  "permission": {
+    "*": "ask",
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "question": "allow",
+    "webfetch": "deny",
+    "websearch": "deny",
+    "edit": "deny",
+    "bash": "deny",
+    "target-host_target_list": "allow",
+    "target-host_collect_facts": "allow",
+    "target-host_run_readonly": "allow",
+    "target-host_read_file": "allow",
+    "target-host_run_change": "ask",
+    "target-host_write_file": "ask",
+    "target-host_reboot_and_wait": "ask"
+  }
+}

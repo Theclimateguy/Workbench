@@ -1,0 +1,22 @@
+network:
+  version: 2
+  ethernets:
+    NM-26aab365-1144-4624-8a1d-1cae6578c4ff:
+      renderer: NetworkManager
+      match:
+        name: "enP7s7"
+      dhcp4: true
+      dhcp6: true
+      wakeonlan: true
+      networkmanager:
+        uuid: "26aab365-1144-4624-8a1d-1cae6578c4ff"
+        name: "lan"
+        passthrough:
+          connection.autoconnect-priority: "20"
+          connection.autoconnect-retries: "1"
+          ethernet._: ""
+          ipv4.dhcp-timeout: "20"
+          ipv4.may-fail: "false"
+          ipv6.addr-gen-mode: "default"
+          ipv6.ip6-privacy: "-1"
+          proxy._: ""

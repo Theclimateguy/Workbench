@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# support-ctl — operator CLI for the Spark support stack.
+#   support-ctl status                      stack health (LLM, targets, docs)
+#   support-ctl model fast|deep             switch the LLM profile (mutually exclusive)
+#   support-ctl target add NAME USER@HOST   register a workstation and install the agent key there
+#   support-ctl target list|test NAME
+#   support-ctl docs status                 token estimate for docs/ in the agent workspace
+#   support-ctl agent                       open the agent TUI (OpenCode) in the workspace
+#   support-ctl bench                       run tests/bench.py against the active profile
+set -euo pipefail
+
+SUPPORT_DIR=${SUPPORT_DIR:-/opt/support}
+STACK_DIR=${STACK_DIR:-/opt/support-stack}
+WORKSPACE=$SUPPORT_DIR/workspace
+TARGETS=$SUPPORT_DIR/targets
+KEY=$SUPPORT_DIR/keys/agent_ed25519
+LLM_URL=${LLM_URL:-http://127.0.0.1:8000}
+
+die() { echo "support-ctl: $*" >&2; exit 1; }
+
+ensure_key() {
+  if [ ! -f "$KEY" ]; then
+    mkdir -p "$(dirname "$KEY")"
+    ssh-keygen -q -t ed25519 -N "" -C "support-agent@$(hostname)" -f "$KEY"
+    chmod 600 "$KEY"
+    echo "generated agent key $KEY"
+  fi
+}
+
+cmd_status() {
+  echo "== LLM"
+  for p in fast deep; do
+    printf '  llm@%s: %s\n' "$p" "$(systemctl is-active "llm@$p" 2>/dev/null || true)"
+  done
+  if curl -sf "$LLM_URL/v1/models" >/dev/null 2>&1; then
+    curl -sf "$LLM_URL/v1/models" | python3 -c 'import json,sys; print("  serving:", ", ".join(m["id"] for m in json.load(sys.stdin)["data"]))'
+  else
+    echo "  API: not ready"
+  fi
+  echo "== Targets"; cmd_target list
+  echo "== Docs"; cmd_docs status
+  echo "== Audit: $([ -f /var/log/support/audit.jsonl ] && wc -l < /var/log/support/audit.jsonl || echo 0) entries"
+}
+
+cmd_model() {
+  local want=${1:-}; [[ "$want" =~ ^(fast|deep)$ ]] || die "usage: support-ctl model fast|deep"
+  sudo systemctl start "llm@$want"       # Conflicts= in the unit stops the other profile
+  echo "starting llm@$want (model load takes several minutes) ..."
+  for _ in $(seq 1 120); do
+    curl -sf "$LLM_URL/health" >/dev/null 2>&1 && { echo "ready"; return; }
+    systemctl is-active --quiet "llm@$want" || die "llm@$want failed: journalctl -u llm@$want"
+    sleep 5
+  done
+  die "timed out waiting for $LLM_URL/health"
+}
+
+cmd_target() {
+  local sub=${1:-list}; shift || true
+  mkdir -p "$TARGETS"
+  case "$sub" in
+    list)
+      ls "$TARGETS"/*.env >/dev/null 2>&1 || { echo "  (none)"; return; }
+      for f in "$TARGETS"/*.env; do
+        # shellcheck disable=SC1090
+        ( . "$f"; printf '  %s: %s@%s:%s\n' "$(basename "$f" .env)" "${USER:-support-agent}" "$HOST" "${PORT:-22}" )
+      done ;;
+    add)
+      local name=${1:-} userhost=${2:-}; [ -n "$name" ] && [ -n "$userhost" ] || die "usage: support-ctl target add NAME USER@HOST[:PORT]"
+      ensure_key
+      local host=${userhost#*@} port=22; [[ "$host" == *:* ]] && { port=${host#*:}; host=${host%%:*}; }
+      echo "Installing agent user on $host via $userhost (asks for that user's password/sudo) ..."
+      ssh -t -p "$port" "$userhost" "sudo bash -s" < "$SUPPORT_DIR/bin/onboard-target.sh" -- "$(cat "$KEY.pub")"
+      printf 'HOST=%s\nUSER=support-agent\nPORT=%s\nKEY=%s\n' "$host" "$port" "$KEY" > "$TARGETS/$name.env"
+      echo "saved $TARGETS/$name.env"; cmd_target test "$name" ;;
+    test)
+      local name=${1:-ws}; [ -f "$TARGETS/$name.env" ] || die "no such target: $name"
+      # shellcheck disable=SC1090
+      ( . "$TARGETS/$name.env"
+        ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -i "${KEY:-$KEY}" -p "${PORT:-22}" "${USER:-support-agent}@$HOST" \
+          "echo \"  ok: \$(hostname) \$(uname -r)\"; sudo -n true && echo \"  sudo: ok\" || echo \"  sudo: MISSING\"" ) ;;
+    *) die "usage: support-ctl target list|add|test" ;;
+  esac
+}
+
+cmd_docs() {
+  local sub=${1:-status}
+  case "$sub" in
+    status)
+      local bytes; bytes=$(find "$WORKSPACE/docs" -name '*.md' -print0 2>/dev/null | xargs -0 cat 2>/dev/null | wc -c | tr -d ' ')
+      local files; files=$(find "$WORKSPACE/docs" -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
+      # rough estimate: ~3.5 bytes/token for mixed RU/EN markdown
+      echo "  $files files, $bytes bytes, ~$(( bytes * 2 / 7 )) tokens (context limit in opencode.json: 131072)"
+      [ $(( bytes * 2 / 7 )) -gt 100000 ] && echo "  WARNING: docs exceed ~100K tokens; split into a system card + search (PLAN.md §8.3)" || true ;;
+    *) die "usage: support-ctl docs status" ;;
+  esac
+}
+
+cmd_agent() {
+  mkdir -p /var/log/support 2>/dev/null || sudo install -d -o "$(id -u)" /var/log/support
+  cd "$WORKSPACE" && exec "$HOME/.opencode/bin/opencode" "$@"
+}
+
+cmd_bench() { python3 "$SUPPORT_DIR/tests/bench.py" "$@"; }
+
+case "${1:-}" in
+  status) cmd_status ;;
+  model)  shift; cmd_model "$@" ;;
+  target) shift; cmd_target "$@" ;;
+  docs)   shift; cmd_docs "$@" ;;
+  agent)  shift; cmd_agent "$@" ;;
+  bench)  shift; cmd_bench "$@" ;;
+  *) sed -n '2,10p' "$0"; exit 1 ;;
+esac

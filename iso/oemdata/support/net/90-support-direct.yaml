@@ -1,0 +1,19 @@
+network:
+  version: 2
+  ethernets:
+    NM-c20c4160-3225-48e8-9ad1-87fda5b2b64c:
+      renderer: NetworkManager
+      match:
+        name: "enP7s7"
+      wakeonlan: true
+      networkmanager:
+        uuid: "c20c4160-3225-48e8-9ad1-87fda5b2b64c"
+        name: "direct"
+        passthrough:
+          ethernet._: ""
+          ipv4.address1: "10.77.0.1/24"
+          ipv4.method: "shared"
+          ipv6.addr-gen-mode: "default"
+          ipv6.method: "link-local"
+          ipv6.ip6-privacy: "-1"
+          proxy._: ""
