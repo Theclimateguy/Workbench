@@ -17,4 +17,10 @@ echo "support-agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-support-agent; c
 install -d /etc/ssh/sshd_config.d
 printf 'Match User support-agent\n    PasswordAuthentication no\n    PubkeyAuthentication yes\n' > /etc/ssh/sshd_config.d/90-support-agent.conf
 sshd -t && (systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true)
+# mDNS advertisement so the GX10 finds this host by name on any network (best effort; needs apt access once).
+if ! systemctl is-active --quiet avahi-daemon 2>/dev/null; then
+  (DEBIAN_FRONTEND=noninteractive timeout 180 apt-get install -y avahi-daemon >/dev/null 2>&1 && systemctl enable --now avahi-daemon >/dev/null 2>&1 \
+     && echo "avahi-daemon installed: reachable as $(hostname).local") || echo "NOTE: avahi-daemon not installed (no apt access?) — GX10 will fall back to MAC-based discovery"
+fi
 echo "support-agent ready on $(hostname): $(ip -br addr | awk '$2=="UP"{print $3}' | tr '\n' ' ')"
+echo "MACs: $(ip -o link | awk -F'link/ether ' '/link\/ether/ && !/docker|veth|br-/{print $2}' | awk '{print $1}' | tr '\n' ' ')"

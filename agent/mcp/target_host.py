@@ -79,6 +79,28 @@ def _audit(event: dict) -> None:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 
+_resolve_cache: dict[str, tuple[float, str]] = {}
+
+
+async def _resolve_host(name: str, cfg: dict) -> str:
+    """HOST=auto -> ask support-resolve-target (mDNS / DHCP lease / MAC / last IP). Cached 60 s."""
+    if cfg.get("HOST") not in (None, "", "auto"):
+        return cfg["HOST"]
+    import time
+    hit = _resolve_cache.get(name)
+    if hit and time.time() - hit[0] < 60:
+        return hit[1]
+    resolver = Path(__file__).resolve().parent.parent / "bin" / "support-resolve-target"
+    proc = await asyncio.create_subprocess_exec(str(resolver), name, stdout=asyncio.subprocess.PIPE,
+                                                stderr=asyncio.subprocess.PIPE)
+    out, err = await asyncio.wait_for(proc.communicate(), timeout=40)
+    if proc.returncode != 0:
+        raise ValueError(f"target '{name}' not reachable: {err.decode(errors='replace').strip()}")
+    host = out.decode().strip()
+    _resolve_cache[name] = (time.time(), host)
+    return host
+
+
 def _load_target(name: str) -> dict:
     p = TARGETS_DIR / f"{name}.env"
     if not p.exists():
@@ -89,8 +111,9 @@ def _load_target(name: str) -> dict:
         if line and not line.startswith("#") and "=" in line:
             k, v = line.split("=", 1)
             cfg[k.strip()] = v.strip().strip('"')
-    if "HOST" not in cfg:
-        raise ValueError(f"target '{name}' has no HOST")
+    if "HOST" not in cfg and "MDNS" not in cfg and "MAC" not in cfg:
+        raise ValueError(f"target '{name}' has no HOST/MDNS/MAC")
+    cfg["NAME"] = name
     return cfg
 
 
@@ -98,18 +121,20 @@ def _target_names() -> list[str]:
     return sorted(p.stem for p in TARGETS_DIR.glob("*.env")) if TARGETS_DIR.exists() else []
 
 
-def _ssh_base(cfg: dict) -> list[str]:
+def _ssh_base(cfg: dict, host: str) -> list[str]:
+    # HostKeyAlias: the host key is remembered per target name, not per (changing) IP.
     return [
         "ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
-        "-o", f"ConnectTimeout=15", "-i", cfg["KEY"], "-p", cfg["PORT"],
-        f"{cfg['USER']}@{cfg['HOST']}",
+        "-o", f"HostKeyAlias={cfg['NAME']}", "-o", "ConnectTimeout=15",
+        "-i", cfg["KEY"], "-p", cfg["PORT"], f"{cfg['USER']}@{host}",
     ]
 
 
 async def _run_ssh(cfg: dict, remote_cmd: str, timeout: int = SSH_TIMEOUT, stdin: str | None = None) -> dict:
     """Async so that parallel tool calls from the agent do not block each other."""
+    host = await _resolve_host(cfg["NAME"], cfg)
     proc = await asyncio.create_subprocess_exec(
-        *_ssh_base(cfg), remote_cmd,
+        *_ssh_base(cfg, host), remote_cmd,
         stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:
@@ -170,7 +195,7 @@ def target_list() -> str:
     rows = []
     for n in _target_names():
         c = _load_target(n)
-        rows.append(f"{n}: {c['USER']}@{c['HOST']}:{c['PORT']}")
+        rows.append(f"{n}: {c['USER']}@{c.get('HOST','auto')}:{c['PORT']} (mdns={c.get('MDNS','-')}, mac={c.get('MAC','-')}, last={c.get('IP_LAST','-')})")
     return "\n".join(rows) or "no targets configured; run `support-ctl target add` on the Spark"
 
 
@@ -264,6 +289,7 @@ async def reboot_and_wait(reason: str, target: str = "ws", wait_seconds: int = 3
     _audit({"tool": "reboot_and_wait", "target": target, "reason": reason})
     await _run_ssh(cfg, "sudo -n systemctl reboot", timeout=20)
     await asyncio.sleep(15)
+    _resolve_cache.pop(cfg["NAME"], None)
     t0 = time.time()
     while time.time() - t0 < wait_seconds:
         r = await _run_ssh(cfg, "uptime -s", timeout=10)

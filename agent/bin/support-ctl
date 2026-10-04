@@ -6,7 +6,7 @@
 #   support-ctl target list|test NAME
 #   support-ctl docs status|reload          token estimate for docs/; reload = restart the agent engine to pick up new docs
 #   support-ctl net status|peers|lan|direct RJ45 mode (auto: lan→direct fallback) and hosts on the direct link
-#   support-ctl net hotspot on|off          Wi-Fi access point GX10-Support (for a laptop/phone in the field)
+#   support-ctl net hotspot on|off|auto on|auto off   Wi-Fi access point GX10-Support; auto = start at boot when no known Wi-Fi is around
 #   support-ctl agent                       open the agent TUI (OpenCode) in the workspace
 #   support-ctl web [password]              start/enable the web UI on :8080 (user "support"; sets the password)
 #   support-ctl bench                       run tests/bench.py against the active profile
@@ -40,6 +40,9 @@ cmd_status() {
   else
     echo "  API: not ready"
   fi
+  echo "== Web UI (login: support)"
+  for a in $(hostname -I); do echo "  http://$a:8080"; done
+  echo "  http://$(hostname).local:8080  (mDNS, с ноутбука в той же сети/хотспоте)"
   echo "== Targets"; cmd_target list
   echo "== Docs"; cmd_docs status
   echo "== Audit: $([ -f /var/log/support/audit.jsonl ] && wc -l < /var/log/support/audit.jsonl || echo 0) entries"
@@ -65,7 +68,7 @@ cmd_target() {
       ls "$TARGETS"/*.env >/dev/null 2>&1 || { echo "  (none)"; return; }
       for f in "$TARGETS"/*.env; do
         # shellcheck disable=SC1090
-        ( . "$f"; printf '  %s: %s@%s:%s\n' "$(basename "$f" .env)" "${USER:-support-agent}" "$HOST" "${PORT:-22}" )
+        ( . "$f"; printf '  %s: %s@%s:%s  (mdns: %s, mac: %s, last: %s)\n' "$(basename "$f" .env)" "${USER:-support-agent}" "$HOST" "${PORT:-22}" "${MDNS:-—}" "${MAC:-—}" "${IP_LAST:-—}" )
       done ;;
     add)
       local name=${1:-} userhost=${2:-}; [ -n "$name" ] && [ -n "$userhost" ] || die "usage: support-ctl target add NAME USER@HOST[:PORT]"
@@ -73,13 +76,27 @@ cmd_target() {
       local host=${userhost#*@} port=22; [[ "$host" == *:* ]] && { port=${host#*:}; host=${host%%:*}; }
       echo "Installing agent user on $host via $userhost (asks for that user's password/sudo) ..."
       ssh -t -p "$port" "$userhost" "sudo bash -s" < "$SUPPORT_DIR/bin/onboard-target.sh" -- "$(cat "$KEY.pub")"
-      printf 'HOST=%s\nUSER=support-agent\nPORT=%s\nKEY=%s\n' "$host" "$port" "$KEY" > "$TARGETS/$name.env"
-      echo "saved $TARGETS/$name.env"; cmd_target test "$name" ;;
+      # Identity that survives address changes: hostname (mDNS) + MAC of the link we see it on.
+      local sshq="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o HostKeyAlias=$name -i $KEY -p $port support-agent@$host"
+      local rhost; rhost=$($sshq hostname 2>/dev/null || true)
+      local ip4; ip4=$(getent ahostsv4 "$host" | awk 'NR==1{print $1}')
+      ping -c 1 -W 1 "$ip4" >/dev/null 2>&1 || true
+      local mac; mac=$(ip neigh show "$ip4" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="lladdr") print $(i+1)}' | head -1)
+      [ -z "$mac" ] && mac=$($sshq "ip -o link show | awk -F'link/ether ' '/link\/ether/ && !/docker|veth|br-/{print \$2}' | awk '{print \$1}' | head -1" 2>/dev/null || true)
+      {
+        echo "HOST=auto"; echo "USER=support-agent"; echo "PORT=$port"; echo "KEY=$KEY"
+        [ -n "$rhost" ] && echo "MDNS=$rhost.local"
+        [ -n "$mac" ] && echo "MAC=$mac"
+        echo "IP_LAST=$host"
+      } > "$TARGETS/$name.env"
+      echo "saved $TARGETS/$name.env (hostname: ${rhost:-?}, MAC: ${mac:-?})"; cmd_target test "$name" ;;
     test)
       local name=${1:-ws}; [ -f "$TARGETS/$name.env" ] || die "no such target: $name"
       # shellcheck disable=SC1090
+      local rhost; rhost=$("$SUPPORT_DIR/bin/support-resolve-target" "$name" -v) || die "cannot find target $name on any link"
+      echo "  resolved: $rhost"
       ( . "$TARGETS/$name.env"
-        ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -i "${KEY:-$KEY}" -p "${PORT:-22}" "${USER:-support-agent}@$HOST" \
+        ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o HostKeyAlias="$name" -o ConnectTimeout=10 -i "${KEY:-$KEY}" -p "${PORT:-22}" "${USER:-support-agent}@$rhost" \
           "echo \"  ok: \$(hostname) \$(uname -r)\"; sudo -n true && echo \"  sudo: ok\" || echo \"  sudo: MISSING\"" ) ;;
     *) die "usage: support-ctl target list|add|test" ;;
   esac
@@ -138,7 +155,15 @@ cmd_net() {
         off)
           sudo nmcli con down hotspot >/dev/null 2>&1 || true
           echo "  hotspot OFF (Wi-Fi client reconnects to known networks automatically)" ;;
-        *) die "usage: support-ctl net hotspot on|off" ;;
+        auto)
+          nmcli -t -f NAME con show | grep -qx hotspot || { cmd_net hotspot on; cmd_net hotspot off; }
+          case "${3:-}" in
+            on)  sudo nmcli con mod hotspot connection.autoconnect yes connection.autoconnect-priority -10
+                 echo "  hotspot AUTO: starts at boot when no known Wi-Fi network is in range (known networks win)" ;;
+            off) sudo nmcli con mod hotspot connection.autoconnect no; echo "  hotspot auto-start disabled" ;;
+            *) die "usage: support-ctl net hotspot auto on|off" ;;
+          esac ;;
+        *) die "usage: support-ctl net hotspot on|off|auto on|off" ;;
       esac ;;
     *) die "usage: support-ctl net status|peers|lan|direct|hotspot on|off" ;;
   esac

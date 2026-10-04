@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# support-resolve-target NAME [-v]
+# Prints the current SSH host for target NAME, resolving it in this order:
+#   1. HOST=<ip or name> fixed in the target file (if not "auto")
+#   2. mDNS:  MDNS=<hostname>.local   (works on any LAN and on the direct cable)
+#   3. NetworkManager DHCP leases of the direct link, matched by MAC=
+#   4. ARP / IPv6 neighbour tables matched by MAC= (after a quick ff02::1 ping) -> fe80::...%iface
+#   5. IP_LAST= remembered from the last successful connection
+# On success also updates IP_LAST in the target file. Exit 1 if nothing answers.
+set -uo pipefail
+NAME=${1:?target name}; VERBOSE=${2:-}
+TARGETS=${SUPPORT_TARGETS_DIR:-/opt/support/targets}
+F="$TARGETS/$NAME.env"; [ -f "$F" ] || { echo "no such target: $NAME" >&2; exit 1; }
+# shellcheck disable=SC1090
+. "$F"
+PORT=${PORT:-22}
+log() { [ -n "$VERBOSE" ] && echo "  [resolve] $*" >&2; }
+
+alive() {  # alive HOST -> 0 if ssh port answers
+  local h=$1; case "$h" in *%*) timeout 3 bash -c "exec 3<>/dev/tcp/${h}/${PORT}" 2>/dev/null && return 0 ;; esac
+  timeout 3 nc -z -w 2 "$h" "$PORT" 2>/dev/null
+}
+remember() { grep -q '^IP_LAST=' "$F" && sed -i "s|^IP_LAST=.*|IP_LAST=$1|" "$F" || echo "IP_LAST=$1" >> "$F"; echo "$1"; exit 0; }
+
+# 1. fixed host
+if [ -n "${HOST:-}" ] && [ "$HOST" != "auto" ]; then log "fixed HOST=$HOST"; echo "$HOST"; exit 0; fi
+
+# 2. mDNS
+if [ -n "${MDNS:-}" ]; then
+  ip=$(avahi-resolve-host-name -4 "$MDNS" 2>/dev/null | awk '{print $2}')
+  [ -z "$ip" ] && ip=$(getent ahostsv4 "$MDNS" 2>/dev/null | awk 'NR==1{print $1}')
+  if [ -n "$ip" ] && alive "$ip"; then log "mDNS $MDNS -> $ip"; remember "$ip"; fi
+  log "mDNS: no answer for $MDNS"
+fi
+
+# 3./4. by MAC
+if [ -n "${MAC:-}" ]; then
+  mac=$(echo "$MAC" | tr 'A-F' 'a-f')
+  for lease in /var/lib/NetworkManager/dnsmasq-*.leases; do
+    lease_txt=$(cat "$lease" 2>/dev/null || sudo -n cat "$lease" 2>/dev/null)
+    ip=$(echo "${lease_txt:-}" | awk -v m="$mac" 'tolower($2)==m{print $3}' | head -1)
+    if [ -n "$ip" ] && alive "$ip"; then log "DHCP lease $mac -> $ip"; remember "$ip"; fi
+  done
+  # poke neighbours so the tables are fresh
+  for ifc in $(ip -br link | awk '$1!="lo" && $1!~/^docker/ && $2=="UP"{print $1}'); do
+    ping -6 -c 1 -W 1 "ff02::1%$ifc" >/dev/null 2>&1 &
+    net=$(ip -4 -o addr show "$ifc" | awk '{print $4}' | head -1)
+    [ -n "$net" ] && ping -4 -b -c 1 -W 1 "$(python3 -c "import ipaddress,sys;print(ipaddress.ip_network(sys.argv[1],strict=False).broadcast_address)" "$net")" >/dev/null 2>&1 &
+  done; wait
+  ip=$(ip -4 neigh | awk -v m="$mac" 'tolower($5)==m && $NF!="FAILED"{print $1}' | head -1)
+  if [ -n "$ip" ] && alive "$ip"; then log "ARP $mac -> $ip"; remember "$ip"; fi
+  ll=$(ip -6 neigh | awk -v m="$mac" 'tolower($5)==m && $1~/^fe80/{print $1"%"$3}' | head -1)
+  if [ -n "$ll" ] && alive "$ll"; then log "IPv6 link-local $mac -> $ll"; remember "$ll"; fi
+  log "MAC $mac not found in leases/neighbours"
+fi
+
+# 5. last known
+if [ -n "${IP_LAST:-}" ] && alive "$IP_LAST"; then log "IP_LAST $IP_LAST answers"; echo "$IP_LAST"; exit 0; fi
+echo "target '$NAME' not reachable (tried mDNS=${MDNS:-—}, MAC=${MAC:-—}, last=${IP_LAST:-—})" >&2
+exit 1
