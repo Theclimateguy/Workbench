@@ -1,0 +1,6 @@
+inventory/
+site/
+payload/
+*.img
+*.iso
+.DS_Store

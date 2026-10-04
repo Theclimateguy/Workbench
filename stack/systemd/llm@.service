@@ -1,0 +1,20 @@
+[Unit]
+Description=Support LLM profile %i (vLLM)
+After=docker.service network-online.target
+Requires=docker.service
+Conflicts=llm@fast.service llm@deep.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/support-stack
+# Unified memory: page cache of model files competes with GPU allocations.
+ExecStartPre=/bin/sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches'
+ExecStart=/usr/bin/docker compose --env-file env/%i.env --profile %i up --remove-orphans
+ExecStop=/usr/bin/docker compose --env-file env/%i.env --profile %i down
+TimeoutStartSec=900
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

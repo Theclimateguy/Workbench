@@ -1,0 +1,53 @@
+# Support stack for Spark (GB10). Profiles are mutually exclusive LLM configs:
+#   docker compose --profile fast up     # Qwen3.6-35B-A3B NVFP4, always-on worker
+#   docker compose --profile deep up     # large reasoner, on demand
+# Model paths, flags and memory budget live in env/<profile>.env and are passed
+# with: docker compose --env-file env/<profile>.env --profile <profile> up
+
+x-vllm: &vllm
+  image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.28.0}
+  restart: "no"
+  ipc: host
+  network_mode: host          # API binds to 127.0.0.1 only, see --host below
+  gpus: all
+  volumes:
+    - /opt/models:/models:ro
+    - /opt/build/hf-cache:/root/.cache/huggingface
+  environment:
+    - HF_HUB_OFFLINE=1
+    - VLLM_LOGGING_LEVEL=${VLLM_LOGGING_LEVEL:-INFO}
+  healthcheck:
+    test: ["CMD", "curl", "-sf", "http://127.0.0.1:${LLM_PORT:-8000}/health"]
+    interval: 15s
+    timeout: 5s
+    retries: 120
+    start_period: 120s
+
+services:
+  llm-fast:
+    <<: *vllm
+    container_name: llm-fast
+    profiles: [fast]
+    command: >
+      ${MODEL_PATH}
+      --served-model-name ${SERVED_NAME:-fast}
+      --host 127.0.0.1 --port ${LLM_PORT:-8000}
+      --max-model-len ${MAX_MODEL_LEN:-131072}
+      --gpu-memory-utilization ${GPU_MEM_UTIL:-0.45}
+      --enable-prefix-caching
+      --enable-auto-tool-choice
+      ${MODEL_ARGS}
+
+  llm-deep:
+    <<: *vllm
+    container_name: llm-deep
+    profiles: [deep]
+    command: >
+      ${MODEL_PATH}
+      --served-model-name ${SERVED_NAME:-deep}
+      --host 127.0.0.1 --port ${LLM_PORT:-8000}
+      --max-model-len ${MAX_MODEL_LEN:-65536}
+      --gpu-memory-utilization ${GPU_MEM_UTIL:-0.78}
+      --enable-prefix-caching
+      --enable-auto-tool-choice
+      ${MODEL_ARGS}
