@@ -12,6 +12,8 @@
 #   support-ctl install-desktop             install the Spark Support icon + launcher for the current user
 #   support-ctl web [password]              start/enable the web UI on :8080 (user "support"; sets the password)
 #   support-ctl bench                       run tests/bench.py against the active profile
+#   support-ctl update                      git pull the Workbench repo and redeploy software (models untouched)
+#   support-ctl version                     installed versions (OS, driver, opencode, vLLM image, models)
 set -euo pipefail
 
 SUPPORT_DIR=${SUPPORT_DIR:-/opt/support}
@@ -20,6 +22,9 @@ WORKSPACE=$SUPPORT_DIR/workspace
 TARGETS=$SUPPORT_DIR/targets
 KEY=$SUPPORT_DIR/keys/agent_ed25519
 LLM_URL=${LLM_URL:-http://127.0.0.1:8000}
+# Interface names differ between DGX OS builds; detect, allow override via env.
+RJ45_IF=${RJ45_IF:-$(ip -o link | awk -F': ' '$2 ~ /^en/ && $2 !~ /docker|veth|br-/ {print $2}' | head -1)}
+WIFI_IF=${WIFI_IF:-$(nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2=="wifi"{print $1}' | head -1)}
 
 die() { echo "support-ctl: $*" >&2; exit 1; }
 
@@ -97,6 +102,7 @@ cmd_target() {
       # shellcheck disable=SC1090
       local rhost; rhost=$("$SUPPORT_DIR/bin/support-resolve-target" "$name" -v) || die "cannot find target $name on any link"
       echo "  resolved: $rhost"
+      # shellcheck disable=SC1090
       ( . "$TARGETS/$name.env"
         ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o HostKeyAlias="$name" -o ConnectTimeout=10 -i "${KEY:-$KEY}" -p "${PORT:-22}" "${USER:-support-agent}@$rhost" \
           "echo \"  ok: \$(hostname) \$(uname -r)\"; sudo -n true && echo \"  sudo: ok\" || echo \"  sudo: MISSING\"" ) ;;
@@ -123,7 +129,7 @@ cmd_docs() {
 }
 
 cmd_net() {
-  local sub=${1:-status} IF=${RJ45_IF:-enP7s7}
+  local sub=${1:-status} IF=$RJ45_IF
   case "$sub" in
     status)
       echo "  $IF: $(nmcli -g GENERAL.STATE device show "$IF" 2>/dev/null | head -1), profile: $(nmcli -g GENERAL.CONNECTION device show "$IF" 2>/dev/null)"
@@ -138,7 +144,8 @@ cmd_net() {
     lan|direct)
       sudo nmcli con up "$sub" >/dev/null && cmd_net status ;;
     hotspot)
-      local WIFI=${WIFI_IF:-wlP9s9} SSID=${HOTSPOT_SSID:-GX10-Support}
+      local WIFI=$WIFI_IF SSID=${HOTSPOT_SSID:-GX10-Support}
+      [ -n "$WIFI" ] || die "no Wi-Fi interface found"
       case "${2:-on}" in
         on)
           sudo install -d -m 755 /etc/support
@@ -218,7 +225,28 @@ cmd_install_desktop() {
   echo "desktop launcher installed: ~/Desktop/spark-support.desktop (+ app menu entry 'Spark Support')"
 }
 
-cmd_bench() { python3 "$SUPPORT_DIR/tests/bench.py" "$@"; }
+cmd_bench() { "$SUPPORT_DIR/venv/bin/python" "$SUPPORT_DIR/tests/bench.py" "$@"; }
+
+cmd_update() {
+  local repo; repo=$(cat /etc/support/workbench.path 2>/dev/null || echo "$HOME/Workbench")
+  [ -d "$repo/.git" ] || die "Workbench checkout not found at $repo (clone it, then: echo PATH | sudo tee /etc/support/workbench.path)"
+  git -C "$repo" pull --ff-only
+  "$repo/install/deploy.sh"
+  echo "updated to $(git -C "$repo" log -1 --format='%h %s')"
+}
+
+cmd_version() {
+  # shellcheck disable=SC1091
+  . /etc/dgx-release 2>/dev/null || true
+  echo "  DGX OS:    ${DGX_SWBUILD_VERSION:-?}  kernel $(uname -r)"
+  echo "  driver:    $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || echo ?)"
+  echo "  docker:    $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo ?)  toolkit $(nvidia-ctk --version 2>/dev/null | awk '{print $NF}')"
+  echo "  opencode:  $("$HOME/.opencode/bin/opencode" --version 2>/dev/null || echo ?)"
+  echo "  vLLM:      $(grep -h '^VLLM_IMAGE=' "$STACK_DIR"/env/fast.env | cut -d= -f2)"
+  for d in /opt/models/*/; do [ -f "$d.workbench-rev" ] && echo "  model:     $(basename "$d") @ $(cut -c1-12 "$d.workbench-rev") ($(du -sh "$d" | cut -f1))"; done
+  local repo; repo=$(cat /etc/support/workbench.path 2>/dev/null || true)
+  [ -n "$repo" ] && echo "  workbench: $(git -C "$repo" log -1 --format='%h %ci' 2>/dev/null)"
+}
 
 case "${1:-}" in
   status) cmd_status ;;
@@ -231,5 +259,7 @@ case "${1:-}" in
   web)    shift; cmd_web "$@" ;;
   gui)    cmd_gui ;;
   install-desktop) cmd_install_desktop ;;
+  update) cmd_update ;;
+  version) cmd_version ;;
   *) sed -n '2,10p' "$0"; exit 1 ;;
 esac

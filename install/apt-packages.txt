@@ -1,0 +1,22 @@
+# Extra packages on top of DGX OS (one per line; '#' comments). Everything else the stack needs
+# (docker, nvidia-container-toolkit, avahi, dnsmasq, python3-venv, jq, rsync, git, curl, netcat) ships with DGX OS.
+avahi-utils
+netcat-openbsd
+python3-venv
+python3-pip
+jq
+rsync
+git
+curl
+# field diagnostics for the operator / future connectors
+tio
+nmap
+arp-scan
+iperf3
+socat
+ethtool
+tcpdump
+tmux
+can-utils
+minicom
+nvtop

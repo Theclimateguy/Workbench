@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# fetch-models.sh [fast|deep|all] — download model weights into /opt/models at the revisions
+# pinned in versions.lock. Resumable (re-run after a dropped connection). ~22 GiB fast, ~81 GiB deep.
+# Optional: HF_TOKEN env for higher rate limits; HF_ENDPOINT for a mirror.
+set -euo pipefail
+REPO=$(cd "$(dirname "$0")/.." && pwd)
+MODELS_DIR=${MODELS_DIR:-/opt/models}
+HF=${HF:-/opt/support/venv/bin/hf}
+LOG=/opt/build/logs/fetch-models.log
+# shellcheck disable=SC1091
+. "$REPO/install/versions.lock"
+want=${1:-fast}
+
+fetch() {  # fetch "repo|rev|dir|GiB"
+  IFS='|' read -r repo rev dir gib <<<"$1"
+  local dest="$MODELS_DIR/$dir"
+  if [ -f "$dest/.workbench-rev" ] && [ "$(cat "$dest/.workbench-rev")" = "$rev" ]; then
+    echo "  $dir: already at $rev"; return
+  fi
+  local free; free=$(df -BG --output=avail "$MODELS_DIR" | tail -1 | tr -dc '0-9')
+  [ "$free" -gt $((gib + 10)) ] || { echo "not enough free space for $dir (${gib} GiB needed, ${free} GiB free)" >&2; exit 1; }
+  echo "  $dir: downloading $repo@$rev (~${gib} GiB) ..."
+  mkdir -p "$dest" /opt/build/logs
+  HF_HUB_ENABLE_HF_TRANSFER=0 "$HF" download "$repo" --revision "$rev" --local-dir "$dest" \
+    --exclude "*.gguf" --exclude "original/*" 2>&1 | tee -a "$LOG" | grep -vE "^\s*$" | tail -2
+  rm -rf "$dest/.cache"
+  echo "$rev" > "$dest/.workbench-rev"
+  echo "  $dir: done ($(du -sh "$dest" | cut -f1))"
+}
+
+case "$want" in
+  fast) fetch "$MODEL_FAST" ;;
+  deep) fetch "$MODEL_DEEP"; fetch "$MODEL_DEEP_DRAFT" ;;
+  all)  fetch "$MODEL_FAST"; fetch "$MODEL_DEEP"; fetch "$MODEL_DEEP_DRAFT" ;;
+  *) echo "usage: $0 fast|deep|all" >&2; exit 1 ;;
+esac

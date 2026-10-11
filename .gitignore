@@ -1,6 +1,11 @@
+# local-only: dumps of the vendor install media, downloaded payloads, site secrets
 inventory/
 site/
 payload/
 *.img
 *.iso
+# build artefacts
+__pycache__/
+*.pyc
+build/*.pdf
 .DS_Store
