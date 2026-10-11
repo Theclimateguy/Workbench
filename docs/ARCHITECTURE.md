@@ -11,7 +11,9 @@
  │     ├─ /opt/support/workspace  (AGENTS.md, opencode.json, docs/)    │
  │     └─ MCP target-host (/opt/support/mcp/target_host.py)            │
  │           └─ ssh -i /opt/support/keys/agent_ed25519 → устройство    │
- │  support-ui  (FastAPI, /opt/support/ui)          → 0.0.0.0:8080     │
+ │  support-ui / support-ui-tls (FastAPI)  → :8080 http, :8443 https   │
+ │     ├─ /static: PWA (manifest, sw.js), STT-worker (Transformers.js) │
+ │     └─ /opt/support/ui-assets: Whisper ONNX + ORT wasm (офлайн)     │
  │  support-ctl (CLI), support-resolve-target, onboard-target.sh       │
  │  NetworkManager: lan (DHCP) → direct (10.77.0.1 shared) → hotspot   │
  └─────────────────────────────────────────────────────────────────────┘
@@ -22,7 +24,7 @@
 | LLM | `stack/compose.yaml`, `stack/env/*.env`, `stack/systemd/llm@.service` | `/opt/support-stack`, `/opt/models` |
 | Агент | `agent/workspace/{AGENTS.md,opencode.json}`, `stack/systemd/support-opencode.service` | `/opt/support/workspace`, `~/.opencode/bin/opencode` |
 | Инструменты | `agent/mcp/target_host.py` | `/opt/support/mcp`, аудит `/var/log/support/audit.jsonl` |
-| UI | `agent/ui/{support_ui.py,index.html}`, `stack/systemd/support-ui.service` | `/opt/support/ui`, пароль `/etc/support/web.env` |
+| UI | `agent/ui/{support_ui.py,index.html,static/}`, `stack/systemd/support-ui{,-tls}.service` | `/opt/support/ui`, `/opt/support/ui-assets`, пароль `/etc/support/web.env`, TLS `/etc/support/tls` |
 | CLI | `agent/bin/*` | `/opt/support/bin`, `/usr/local/bin/support-ctl` |
 | Сеть | `stack/net/*.yaml` | `/etc/netplan/90-support-*.yaml`, профиль `hotspot` в NM |
 | Цели | — | `/opt/support/targets/*.env`, `/opt/support/keys/` |
@@ -35,7 +37,8 @@
 - Всё в аудит: `/var/log/support/audit.jsonl` (время, цель, команда, причина, rc).
 - Вывод устройства для агента — данные, не инструкции (AGENTS.md).
 - Секреты вне git: `/etc/support/*.env` (root, 600), ключи агента уникальны на устройство.
-- Сеть: vLLM и OpenCode слушают только `127.0.0.1`; наружу — только UI :8080 с basic-auth (localhost без пароля) и SSH.
+- Сеть: vLLM и OpenCode слушают только `127.0.0.1`; наружу — только UI :8080/:8443 с basic-auth (localhost без пароля) и SSH. HTTPS — свой локальный CA (`install/gen-certs.sh`), публичный сертификат отдаётся на `/ca.crt`; закрытый ключ CA не покидает GX10.
+- Голосовой ввод выполняется в браузере оператора (Whisper через Transformers.js, WebGPU/WASM); на GX10 только раздача файлов. Распознанный текст попадает в поле ввода, отправка и подтверждения — руками.
 
 ## Поиск устройства без фиксированных адресов
 

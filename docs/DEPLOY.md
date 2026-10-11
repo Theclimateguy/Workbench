@@ -49,8 +49,9 @@ cd ~/Workbench
 | 3 | opencode | движок агента, версия из lock |
 | 4 | deploy | `agent/` → `/opt/support`, `stack/` → `/opt/support-stack`, юниты, netplan-профили `lan`/`direct` |
 | 5 | vllm-image | `docker pull` по digest, проверка GPU в контейнере |
+| 6 | ui-assets | Transformers.js + Whisper ONNX (~0.35 ГиБ) в `/opt/support/ui-assets` для голосового ввода в браузере |
 | 6 | models | `hf download` по ревизиям из lock в `/opt/models` |
-| 7 | services | ключ агента, `llm@fast` enable + старт, web-пароль, `support-opencode`, `support-ui` |
+| 7 | services | ключ агента, `llm@fast` enable + старт, web-пароль, локальный CA + сертификат, `support-opencode`, `support-ui` (:8080), `support-ui-tls` (:8443) |
 | 8 | desktop | ярлык «Spark Support», мануал на рабочий стол, хотспот auto |
 | 9 | verify | `bench.py`, цель `self`, `mcp_smoke.py` |
 
@@ -59,6 +60,7 @@ cd ~/Workbench
 ## 4. Обновления
 
 - **Софт** (агент, UI, скрипты, конфиги): на GX10 `support-ctl update` — `git pull` + `deploy.sh`. Веса, цели, ключи, документация не трогаются.
+- **Голосовой ввод / PWA на уже развёрнутом GX10**: `support-ctl update`, затем `install/fetch-ui-assets.sh` (нужен интернет) и `support-ctl web` (выпустит сертификат и включит `support-ui-tls`).
 - **Версии** (OpenCode, vLLM, модели): правка `install/versions.lock` в репозитории → `support-ctl update` → для образа/моделей вручную `bootstrap.sh` после удаления соответствующего маркера (`sudo rm /var/lib/support/bootstrap/vllm-image.done`).
 - **ОС**: `sudo apt full-upgrade` — отдельно, перед выездом, с последующим `support-ctl bench` (минимум 60 tok/s на fast — норма 95).
 - Что ещё посмотреть: `support-ctl version`.

@@ -7,9 +7,13 @@ buttons, targets, audit — and keeps working across OpenCode upgrades (it uses 
 HTTP API only).
 
 Run:  uvicorn support_ui:app --host 0.0.0.0 --port 8080   (see stack/systemd/support-ui.service)
+      + a second instance with --ssl-keyfile/--ssl-certfile on 8443 (support-ui-tls.service):
+      microphone access and PWA install only work on HTTPS; the local CA is served at /ca.crt.
 Env:  OPENCODE_URL (default http://127.0.0.1:4096), OPENCODE_SERVER_PASSWORD / _USERNAME,
       SUPPORT_UI_PASSWORD (basic auth for this UI; defaults to the OpenCode password),
-      SUPPORT_WORKSPACE (default /opt/support/workspace), SUPPORT_TARGETS_DIR, SUPPORT_AUDIT_LOG
+      SUPPORT_WORKSPACE (default /opt/support/workspace), SUPPORT_TARGETS_DIR, SUPPORT_AUDIT_LOG,
+      SUPPORT_UI_ASSETS (default /opt/support/ui-assets: vendor/ + models/ for browser-side STT),
+      SUPPORT_TLS_DIR (default /etc/support/tls)
 """
 from __future__ import annotations
 
@@ -22,7 +26,8 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 OPENCODE_URL = os.environ.get("OPENCODE_URL", "http://127.0.0.1:4096")
 OC_USER = os.environ.get("OPENCODE_SERVER_USERNAME", "opencode")
@@ -33,7 +38,11 @@ WORKSPACE = os.environ.get("SUPPORT_WORKSPACE", "/opt/support/workspace")
 TARGETS_DIR = Path(os.environ.get("SUPPORT_TARGETS_DIR", "/opt/support/targets"))
 AUDIT_LOG = Path(os.environ.get("SUPPORT_AUDIT_LOG", "/var/log/support/audit.jsonl"))
 LLM_URL = os.environ.get("LLM_URL", "http://127.0.0.1:8000")
+STATIC_DIR = Path(__file__).parent / "static"
+ASSETS_DIR = Path(os.environ.get("SUPPORT_UI_ASSETS", "/opt/support/ui-assets"))
+TLS_DIR = Path(os.environ.get("SUPPORT_TLS_DIR", "/etc/support/tls"))
 INDEX_HTML = (Path(__file__).parent / "index.html").read_text()
+PUBLIC_PATHS = ("/ca.crt", "/static/manifest.json", "/static/icons/")   # no login needed
 
 app = FastAPI(title="support-ui")
 client = httpx.AsyncClient(base_url=OPENCODE_URL, auth=(OC_USER, OC_PASS) if OC_PASS else None,
@@ -49,7 +58,7 @@ def _is_local(request: Request) -> bool:
 
 @app.middleware("http")
 async def basic_auth(request: Request, call_next):
-    if UI_PASS and not _is_local(request):
+    if UI_PASS and not _is_local(request) and not request.url.path.startswith(PUBLIC_PATHS):
         hdr = request.headers.get("authorization", "")
         ok = False
         if hdr.startswith("Basic "):
@@ -69,7 +78,10 @@ async def basic_auth(request: Request, call_next):
 async def oc(method: str, path: str, **kw) -> httpx.Response:
     params = kw.pop("params", {}) or {}
     params.setdefault("directory", WORKSPACE)
-    r = await client.request(method, path, params=params, **kw)
+    try:
+        r = await client.request(method, path, params=params, **kw)
+    except httpx.HTTPError as e:
+        raise HTTPException(503, f"agent engine (opencode) unreachable: {e.__class__.__name__}") from e
     if r.status_code >= 400:
         raise HTTPException(r.status_code, f"opencode {method} {path}: {r.text[:300]}")
     return r
@@ -112,6 +124,35 @@ def _normalize_part(p: dict) -> dict | None:
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return INDEX_HTML
+
+
+@app.get("/ca.crt")
+async def ca_cert():
+    """Local CA to install on a laptop/phone once, so https://<gx10>:8443 is trusted (mic, PWA)."""
+    p = TLS_DIR / "ca.crt"
+    if not p.exists():
+        raise HTTPException(404, "no local CA generated yet (install/gen-certs.sh)")
+    return FileResponse(p, media_type="application/x-x509-ca-cert", filename=f"workbench-{os.uname().nodename}-ca.crt")
+
+
+@app.get("/api/features")
+async def features():
+    """What the browser may use: offline STT assets present? which model? HTTPS port?"""
+    model_dir = next((d for d in sorted((ASSETS_DIR / "models").glob("*")) if (d / "config.json").exists()), None) \
+        if (ASSETS_DIR / "models").exists() else None
+    return {
+        "stt": bool(model_dir) and (ASSETS_DIR / "vendor" / "transformers.min.js").exists(),
+        "stt_model": model_dir.name if model_dir else None,
+        "tls": (TLS_DIR / "server.crt").exists(), "tls_port": int(os.environ.get("SUPPORT_UI_TLS_PORT", "8443")),
+    }
+
+
+# Static: PWA shell/worker from the repo, heavy vendor/model assets from the fetched directory.
+for sub in ("vendor", "models"):
+    d = ASSETS_DIR / sub
+    if d.exists():
+        app.mount(f"/static/{sub}", StaticFiles(directory=d), name=sub)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/api/state")

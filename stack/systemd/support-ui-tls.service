@@ -1,0 +1,20 @@
+[Unit]
+Description=Support agent web UI over HTTPS (microphone + PWA need a secure origin)
+After=support-opencode.service
+Requires=support-opencode.service
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/opt/support/ui
+EnvironmentFile=/etc/support/web.env
+Environment=OPENCODE_URL=http://127.0.0.1:4096
+Environment=SUPPORT_WORKSPACE=/opt/support/workspace
+Environment=SUPPORT_UI_TLS_PORT=8443
+ExecStart=/opt/support/venv/bin/uvicorn support_ui:app --host 0.0.0.0 --port 8443 --log-level warning --ssl-certfile /etc/support/tls/server.crt --ssl-keyfile /etc/support/tls/server.key
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

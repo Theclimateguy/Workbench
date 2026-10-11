@@ -19,7 +19,7 @@ sudo install -d -m 755 /etc/support
 log "software -> $SUPPORT_DIR, $STACK_DIR"
 # Never clobber per-device state: targets/, keys/, workspace/docs/ (operator's documentation).
 rsync -a --delete \
-  --exclude 'targets/' --exclude 'keys/' --exclude 'workspace/docs/' --exclude '__pycache__/' \
+  --exclude 'targets/' --exclude 'keys/' --exclude 'workspace/docs/' --exclude 'ui-assets/' --exclude 'venv/' --exclude '__pycache__/' \
   "$REPO/agent/" "$SUPPORT_DIR/"
 rsync -a "$REPO/agent/workspace/docs/" "$SUPPORT_DIR/workspace/docs/" --ignore-existing
 rsync -a "$REPO/tests/" "$SUPPORT_DIR/tests/"
@@ -28,7 +28,7 @@ chmod +x "$SUPPORT_DIR"/bin/*
 sudo ln -sf "$SUPPORT_DIR/bin/support-ctl" /usr/local/bin/support-ctl
 
 log "systemd units (user: $RUN_USER)"
-for u in llm@.service support-opencode.service support-ui.service; do
+for u in llm@.service support-opencode.service support-ui.service support-ui-tls.service; do
   sed -e "s|^User=admin|User=$RUN_USER|; s|^Group=admin|Group=$RUN_USER|" \
       -e "s|/home/admin/|/home/$RUN_USER/|g" "$STACK_DIR/systemd/$u" | sudo tee "/etc/systemd/system/$u" >/dev/null
 done
@@ -51,7 +51,7 @@ if [ -d "$SUPPORT_DIR/venv" ]; then
 fi
 
 log "restarting agent services (if installed)"
-for s in support-opencode support-ui; do
+for s in support-opencode support-ui support-ui-tls; do
   systemctl is-enabled --quiet "$s" 2>/dev/null && sudo systemctl restart "$s" || true
 done
 log "done"

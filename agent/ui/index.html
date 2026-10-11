@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Spark Support</title>
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<meta name="theme-color" content="#1e3a8a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <style>
   :root { --bg:#f6f7f9; --panel:#fff; --ink:#1b1f24; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb;
           --ok:#15803d; --warn:#b45309; --bad:#b91c1c; --tool:#f3f4f6; --user:#e8f0fe; }
@@ -39,6 +45,10 @@
   .err { color:var(--bad); font-size:13px }
   .topbar { display:flex; gap:10px; align-items:center; padding:10px 24px; border-bottom:1px solid var(--line); background:var(--panel) }
   .spacer { flex:1 }
+  #mic { min-width:44px; font-size:18px; line-height:1 } #mic.rec { background:var(--bad); color:#fff; border-color:var(--bad); animation: pulse 1s infinite }
+  @keyframes pulse { 50% { opacity:.6 } }
+  #sttStatus { font-size:12px; color:var(--muted); padding:0 24px 6px; background:var(--panel) }
+  #hint { font-size:12px; color:var(--muted); padding:4px 24px; background:var(--panel); border-top:1px solid var(--line) } #hint a { color:var(--accent) }
   @media (max-width: 860px) { .app { grid-template-columns: 1fr } aside { display:none } }
 </style>
 </head>
@@ -61,9 +71,13 @@
       <span class="spacer"></span>
       <span id="busy" class="pill" style="display:none">думает…</span>
       <button id="abort" class="danger" style="display:none">Стоп</button>
+      <button id="installPwa" style="display:none" title="Установить как приложение на этот компьютер">⤓ Установить</button>
     </div>
     <div id="log"></div>
+    <div id="hint" style="display:none"></div>
+    <div id="sttStatus" style="display:none"></div>
     <form id="form">
+      <button type="button" id="mic" style="display:none" title="Голосовой ввод: нажми — говори — нажми ещё раз (или пробел, когда курсор не в поле)">🎤</button>
       <textarea id="input" placeholder="Опиши проблему или задачу для workstation… (Enter — отправить, Shift+Enter — новая строка)"></textarea>
       <button class="primary" id="send" type="submit">Отправить</button>
     </form>
@@ -168,6 +182,78 @@ $("#log").addEventListener("click", async e => {
 
 refreshState(); if (sid) selectSession(sid);
 setInterval(poll, 1500); setInterval(refreshState, 10000);
+
+// ---------- PWA ----------
+if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/static/sw.js").catch(() => {});
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; $("#installPwa").style.display = ""; });
+$("#installPwa").onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $("#installPwa").style.display = "none"; };
+window.addEventListener("appinstalled", () => { $("#installPwa").style.display = "none"; });
+
+// ---------- Offline voice input (browser-side Whisper; text lands in the input box, operator sends it) ----------
+const stt = { worker: null, ready: false, loading: false, recording: false, ctx: null, stream: null, node: null, chunks: [], model: null };
+const setStt = (t, show=true) => { $("#sttStatus").textContent = t; $("#sttStatus").style.display = show && t ? "" : "none"; };
+async function initVoice() {
+  let f; try { f = await api("/api/features"); } catch { return; }
+  const isLocal = ["localhost","127.0.0.1"].includes(location.hostname);
+  if (!window.isSecureContext && f.tls && !isLocal) {
+    $("#hint").innerHTML = `Микрофон и установка как приложения работают только по HTTPS: <a href="https://${location.hostname}:${f.tls_port}/">https://${location.hostname}:${f.tls_port}/</a> — один раз установите сертификат <a href="/ca.crt">ca.crt</a> на этом устройстве.`;
+    $("#hint").style.display = ""; return;
+  }
+  if (!f.stt || !window.isSecureContext || !navigator.mediaDevices?.getUserMedia) return;
+  stt.model = f.stt_model; $("#mic").style.display = "";
+}
+function ensureWorker() {
+  if (stt.worker) return;
+  stt.worker = new Worker("/static/stt-worker.js", { type: "module" });
+  stt.worker.onmessage = ({ data }) => {
+    if (data.type === "progress" && data.status === "progress") setStt(`загрузка модели распознавания: ${data.file?.split("/").pop()} ${Math.round(data.progress || 0)}%`);
+    if (data.type === "ready") { stt.ready = true; stt.loading = false; setStt(`распознавание готово (${data.device === "webgpu" ? "GPU" : "CPU"})`); setTimeout(() => setStt(""), 2500); if (stt.pendingAudio) { transcribe(stt.pendingAudio); stt.pendingAudio = null; } }
+    if (data.type === "result") { setStt(""); const t = $("#input"); t.value = (t.value ? t.value.replace(/\s*$/, " ") : "") + data.text; t.focus(); t.dispatchEvent(new Event("input")); }
+    if (data.type === "error") { stt.loading = false; setStt("ошибка распознавания: " + data.message); }
+  };
+  stt.loading = true; setStt("загрузка модели распознавания…");
+  stt.worker.postMessage({ type: "load", model: stt.model });
+}
+function transcribe(audio) {
+  if (!stt.ready) { stt.pendingAudio = audio; ensureWorker(); return; }
+  setStt(`распознаю (${(audio.length / 16000).toFixed(1)} с)…`);
+  stt.worker.postMessage({ type: "transcribe", audio, language: "russian" }, [audio.buffer]);
+}
+async function startRec() {
+  ensureWorker();
+  try { stt.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } }); }
+  catch (e) { setStt("нет доступа к микрофону: " + e.message); return; }
+  stt.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  const src = stt.ctx.createMediaStreamSource(stt.stream);
+  stt.node = stt.ctx.createScriptProcessor(4096, 1, 1); stt.chunks = [];
+  stt.node.onaudioprocess = e => { if (stt.recording) stt.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
+  src.connect(stt.node); stt.node.connect(stt.ctx.destination);
+  stt.recording = true; $("#mic").classList.add("rec"); setStt("слушаю… нажми ещё раз, чтобы закончить");
+}
+async function stopRec() {
+  stt.recording = false; $("#mic").classList.remove("rec");
+  stt.node?.disconnect(); stt.stream?.getTracks().forEach(t => t.stop()); await stt.ctx?.close();
+  const n = stt.chunks.reduce((a, c) => a + c.length, 0);
+  if (stt.ctx && stt.ctx.sampleRate !== 16000) { setStt("браузер не дал 16 кГц, повтори"); return; }
+  if (n < 16000 * 0.5) { setStt("слишком коротко"); return; }
+  const audio = new Float32Array(n); let o = 0; for (const c of stt.chunks) { audio.set(c, o); o += c.length; }
+  stt.chunks = []; transcribe(audio);
+}
+$("#mic").onclick = () => stt.recording ? stopRec() : startRec();
+document.addEventListener("keydown", e => {
+  if (e.code === "Space" && document.activeElement !== $("#input") && $("#mic").style.display !== "none" && !e.repeat) { e.preventDefault(); $("#mic").click(); }
+});
+// Self-test without a microphone: ?stt_test=/static/test.wav transcribes that file into the input box.
+const sttTest = new URLSearchParams(location.search).get("stt_test");
+initVoice().then(async () => {
+  if (!sttTest) return;
+  const f = await api("/api/features"); stt.model = f.stt_model;
+  const buf = await (await fetch(sttTest)).arrayBuffer();
+  const ctx = new OfflineAudioContext(1, 16000 * 60, 16000);
+  const dec = await ctx.decodeAudioData(buf);
+  transcribe(new Float32Array(dec.getChannelData(0).subarray(0, Math.ceil(dec.duration * 16000))));
+});
 </script>
 </body>
 </html>

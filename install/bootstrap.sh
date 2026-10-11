@@ -111,6 +111,7 @@ if phase vllm-image; then
 fi
 
 # ---------------------------------------------------------------- 6. models
+if phase ui-assets; then "$REPO/install/fetch-ui-assets.sh"; done_ ui-assets; fi
 if [ "$SKIP_MODELS" = 0 ]; then
   if phase model-fast; then "$REPO/install/fetch-models.sh" fast; done_ model-fast; fi
   if [ "$WITH_DEEP" = 1 ] && phase model-deep; then "$REPO/install/fetch-models.sh" deep; done_ model-deep; fi

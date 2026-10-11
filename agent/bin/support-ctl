@@ -10,7 +10,7 @@
 #   support-ctl agent                       open the agent TUI (OpenCode) in the workspace
 #   support-ctl gui                         open the web UI in the default browser (desktop shortcut)
 #   support-ctl install-desktop             install the Spark Support icon + launcher for the current user
-#   support-ctl web [password]              start/enable the web UI on :8080 (user "support"; sets the password)
+#   support-ctl web [password]              start/enable the web UI on :8080 + :8443 (user "support"; sets the password; issues the local TLS cert)
 #   support-ctl bench                       run tests/bench.py against the active profile
 #   support-ctl update                      git pull the Workbench repo and redeploy software (models untouched)
 #   support-ctl version                     installed versions (OS, driver, opencode, vLLM image, models)
@@ -192,13 +192,21 @@ cmd_web() {
     sudo chmod 600 /etc/support/web.env
     echo "web password set (user: support): $pw"
   fi
-  sudo cp "$STACK_DIR/systemd/support-opencode.service" "$STACK_DIR/systemd/support-ui.service" /etc/systemd/system/
+  # Units are installed (templated for the current user) by install/deploy.sh.
+  local repo; repo=$(cat /etc/support/workbench.path 2>/dev/null || echo "$SUPPORT_DIR/..")
+  [ -x "$repo/install/gen-certs.sh" ] && "$repo/install/gen-certs.sh"
   sudo systemctl daemon-reload
   sudo systemctl disable --now support-web >/dev/null 2>&1 || true
   sudo systemctl enable --now support-opencode support-ui >/dev/null
   sudo systemctl restart support-opencode support-ui
+  if sudo test -s /etc/support/tls/server.crt; then
+    sudo systemctl enable --now support-ui-tls >/dev/null && sudo systemctl restart support-ui-tls
+  fi
   sleep 4
-  systemctl is-active --quiet support-ui && echo "web UI: http://$(hostname -I | awk '{print $1}'):8080  (login: support)" || die "support-ui failed: journalctl -u support-ui"
+  systemctl is-active --quiet support-ui || die "support-ui failed: journalctl -u support-ui"
+  local ip; ip=$(hostname -I | awk '{print $1}')
+  echo "web UI: http://$ip:8080  (login: support)"
+  systemctl is-active --quiet support-ui-tls && echo "   HTTPS: https://$ip:8443  — for microphone/PWA from a laptop; install http://$ip:8080/ca.crt there once"
 }
 
 cmd_gui() {

@@ -24,8 +24,8 @@ cd ~/Workbench && ./install/bootstrap.sh --with-deep
 ## Структура
 
 ```
-install/      bootstrap.sh (установка с нуля), deploy.sh (обновление софта), fetch-models.sh, versions.lock
-agent/        bin/ (support-ctl, resolve, onboarding), mcp/ (target-host), ui/ (web), workspace/ (конфиг агента), desktop/
+install/      bootstrap.sh (установка с нуля), deploy.sh (обновление софта), fetch-models.sh, fetch-ui-assets.sh, gen-certs.sh, versions.lock
+agent/        bin/ (support-ctl, resolve, onboarding), mcp/ (target-host), ui/ (web + PWA + офлайн-голос), workspace/ (конфиг агента), desktop/
 stack/        compose.yaml + env/ (профили LLM), systemd/, net/ (netplan-профили lan/direct)
 tests/        bench.py (tok/s, TTFT, tool-call), mcp_smoke.py
 docs/         мануал (md + PDF, сборка `make manual`), DEPLOY, ARCHITECTURE, bench-log
