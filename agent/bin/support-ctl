@@ -220,7 +220,8 @@ cmd_gui() {
 
 cmd_install_desktop() {
   local src=$SUPPORT_DIR/desktop
-  install -Dm644 "$src/spark-support.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/spark-support.svg"
+  install -Dm644 "$src/spark-support.png" "$HOME/.local/share/icons/hicolor/512x512/apps/spark-support.png"
+  rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/spark-support.svg"
   install -Dm755 "$src/spark-support.desktop" "$HOME/.local/share/applications/spark-support.desktop"
   mkdir -p "$HOME/Desktop" && install -m755 "$src/spark-support.desktop" "$HOME/Desktop/spark-support.desktop"
   gtk-update-icon-cache -q -f -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
