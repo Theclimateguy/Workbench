@@ -115,7 +115,8 @@ def _normalize_part(p: dict) -> dict | None:
     if t == "tool":
         st = p.get("state", {}) or {}
         return {"type": "tool", "tool": p.get("tool"), "callID": p.get("callID"), "status": st.get("status"), "input": st.get("input", {}),
-                "output": (st.get("output") or st.get("error") or "")[:20000], "title": st.get("title", "")}
+                "output": (st.get("output") or st.get("error") or "")[:20000], "title": st.get("title", ""),
+                "time": st.get("time") or {}}
     return None
 
 
