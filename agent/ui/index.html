@@ -10,6 +10,7 @@
 <meta name="theme-color" content="#1e3a8a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
+<script src="/static/lib/marked.umd.js"></script>
 <style>
   :root { --bg:#f6f7f9; --panel:#fff; --ink:#1b1f24; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb;
           --ok:#15803d; --warn:#b45309; --bad:#b91c1c; --tool:#f3f4f6; --user:#e8f0fe; }
@@ -17,10 +18,10 @@
     :root { --bg:#0f1115; --panel:#171a21; --ink:#e6e8eb; --muted:#9aa3ad; --line:#2a2f3a; --accent:#60a5fa;
             --tool:#1f2430; --user:#1e2a44; }
   }
-  * { box-sizing:border-box } body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--ink) }
-  .app { display:grid; grid-template-columns: 280px 1fr; height:100vh }
+  * { box-sizing:border-box } html, body { height:100%; overflow:hidden } body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--ink) }
+  .app { display:grid; grid-template-columns: 280px 1fr; height:100vh; height:100dvh }
   aside { background:var(--panel); border-right:1px solid var(--line); padding:14px; overflow:auto; display:flex; flex-direction:column; gap:14px }
-  main { display:flex; flex-direction:column; min-width:0 }
+  main { display:flex; flex-direction:column; min-width:0; min-height:0 }   /* min-height:0 — otherwise #log grows past the viewport instead of scrolling */
   h1 { font-size:16px; margin:0 } h2 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 6px }
   .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:var(--tool) }
   .pill.ok { color:var(--ok) } .pill.bad { color:var(--bad) } .pill.warn { color:var(--warn) }
@@ -29,9 +30,21 @@
   button.danger { color:var(--bad) } button:disabled { opacity:.5; cursor:default }
   .sessions a { display:block; padding:6px 8px; border-radius:6px; color:inherit; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
   .sessions a.active, .sessions a:hover { background:var(--tool) }
-  #log { flex:1; overflow:auto; padding:18px 24px; display:flex; flex-direction:column; gap:12px }
+  #log { flex:1; min-height:0; overflow-y:auto; padding:18px 24px; display:flex; flex-direction:column; gap:12px }
   .msg { max-width: 920px } .msg.user .bubble { background:var(--user) }
-  .bubble { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 14px; white-space:pre-wrap; word-break:break-word }
+  .bubble { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 14px; word-break:break-word; overflow-x:auto }
+  .bubble > :first-child { margin-top:0 } .bubble > :last-child { margin-bottom:0 }
+  .bubble p { margin:0 0 .6em } .bubble ul, .bubble ol { margin:.3em 0 .6em; padding-left:1.4em } .bubble li { margin:.15em 0 }
+  .bubble h1, .bubble h2, .bubble h3, .bubble h4 { margin:.8em 0 .4em; line-height:1.25 } .bubble h1 { font-size:1.25em } .bubble h2 { font-size:1.15em } .bubble h3 { font-size:1.05em }
+  .bubble code { background:var(--tool); padding:1px 5px; border-radius:4px; font-size:.92em }
+  .bubble pre { background:var(--tool); padding:8px 10px; border-radius:6px; overflow:auto; margin:.4em 0 .7em } .bubble pre code { background:none; padding:0; font-size:12.5px }
+  .bubble table { border-collapse:collapse; margin:.4em 0 .8em; font-size:13.5px; display:block; overflow-x:auto; max-width:100% }
+  .bubble th, .bubble td { border:1px solid var(--line); padding:4px 9px; text-align:left; vertical-align:top } .bubble th { background:var(--tool); font-weight:600 }
+  .bubble tr:nth-child(even) td { background:color-mix(in srgb, var(--tool) 50%, transparent) }
+  .bubble blockquote { margin:.4em 0; padding:2px 12px; border-left:3px solid var(--line); color:var(--muted) }
+  .bubble hr { border:0; border-top:1px solid var(--line); margin:.8em 0 } .bubble a { color:var(--accent) }
+  #toBottom { position:absolute; right:28px; bottom:96px; z-index:2; border-radius:999px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,.25); background:var(--panel) }
+  main { position:relative }
   .meta { font-size:12px; color:var(--muted); margin:0 0 4px }
   details.tool { background:var(--tool); border-radius:8px; padding:6px 10px; margin:6px 0; font-size:13px }
   details.tool summary { cursor:pointer } details.tool pre { white-space:pre-wrap; margin:6px 0 0; max-height:320px; overflow:auto; font-size:12px }
@@ -74,6 +87,7 @@
       <button id="installPwa" style="display:none" title="Установить как приложение на этот компьютер">⤓ Установить</button>
     </div>
     <div id="log"></div>
+    <button id="toBottom" type="button" style="display:none" title="К последним сообщениям">↓ вниз</button>
     <div id="hint" style="display:none"></div>
     <div id="sttStatus" style="display:none"></div>
     <form id="form">
@@ -87,8 +101,9 @@
 const $ = s => document.querySelector(s);
 let sid = location.hash.slice(1) || null, pollTimer = null, lastJSON = "";
 const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
-const fmt = s => esc(s).replace(/```([\s\S]*?)```/g, (m, c) => `<pre style="background:var(--tool);padding:8px;border-radius:6px;overflow:auto">${c}</pre>`)
-                       .replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+// Markdown (GFM: tables, lists, code) via marked; raw HTML is neutralised by escaping before parsing.
+marked.use({ gfm: true, breaks: true });
+const fmt = s => { try { return marked.parse(esc(s)); } catch { return esc(s).replace(/\n/g, "<br>"); } };
 const api = async (path, opt={}) => {
   const r = await fetch(location.origin + path, {headers:{"Content-Type":"application/json"}, ...opt});
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
@@ -145,14 +160,23 @@ function renderMessages(d) {
     return `<div class="msg ${m.role}"><div class="meta">${m.role==="user"?"Ты":"Агент"} · ${m.time?new Date(m.time).toLocaleTimeString("ru"):""}</div>${parts}${err}</div>`;
   }).join("") + d.pending.map(p => renderPerm(p, calls)).join("");
   if (html !== lastJSON) {
-    const atBottom = $("#log").scrollTop + $("#log").clientHeight >= $("#log").scrollHeight - 40;
     $("#log").innerHTML = html; lastJSON = html;
-    if (atBottom) $("#log").scrollTop = $("#log").scrollHeight;
+    if (stickBottom) scrollToBottom();          // new agent output: follow it unless the operator scrolled up to read
   }
   $("#busy").style.display = d.busy ? "" : "none";
   $("#abort").style.display = d.busy ? "" : "none";
   $("#send").disabled = !sid;
 }
+
+// Auto-scroll: stick to the bottom while new messages arrive; scrolling up pauses it (button "↓ вниз" resumes).
+let stickBottom = true;
+const log = $("#log");
+const scrollToBottom = () => { log.scrollTop = log.scrollHeight; stickBottom = true; $("#toBottom").style.display = "none"; };
+log.addEventListener("scroll", () => {
+  const nearBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 60;
+  stickBottom = nearBottom; $("#toBottom").style.display = nearBottom ? "none" : "";
+});
+$("#toBottom").onclick = scrollToBottom;
 
 async function poll() {
   if (!sid) return;
@@ -161,7 +185,7 @@ async function poll() {
 }
 
 function selectSession(id) {
-  sid = id; lastJSON = ""; $("#title").textContent = id ? `Сессия ${id.slice(-6)}` : "Выбери или создай сессию";
+  sid = id; lastJSON = ""; stickBottom = true; $("#title").textContent = id ? `Сессия ${id.slice(-6)}` : "Выбери или создай сессию";
   document.querySelectorAll(".sessions a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#"+id));
   poll();
 }
@@ -170,7 +194,7 @@ window.addEventListener("hashchange", () => selectSession(location.hash.slice(1)
 $("#newSession").onclick = async () => { const s = await api("/api/session", {method:"POST", body: JSON.stringify({title: "Сессия " + new Date().toLocaleString("ru")})}); await refreshState(); location.hash = s.id; };
 $("#form").onsubmit = async e => {
   e.preventDefault(); const text = $("#input").value.trim(); if (!text || !sid) return;
-  $("#input").value = ""; await api(`/api/session/${sid}/prompt`, {method:"POST", body: JSON.stringify({text})}); poll();
+  $("#input").value = ""; stickBottom = true; await api(`/api/session/${sid}/prompt`, {method:"POST", body: JSON.stringify({text})}); poll();
 };
 $("#input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form").requestSubmit(); } });
 $("#abort").onclick = () => api(`/api/session/${sid}/abort`, {method:"POST"});

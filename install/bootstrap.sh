@@ -44,9 +44,11 @@ if phase preflight; then
   . /etc/dgx-release
   echo "    DGX OS $DGX_SWBUILD_VERSION, platform ${DGX_PLATFORM:-?}, host $(hostname)"
   if [ "$(printf '%s\n%s\n' "$DGX_OS_MIN" "$DGX_SWBUILD_VERSION" | sort -V | head -1)" != "$DGX_OS_MIN" ]; then
-    warn "DGX OS $DGX_SWBUILD_VERSION is older than the validated $DGX_OS_MIN. Run the OTA update first:"
-    warn "  sudo apt update && sudo apt full-upgrade -y && sudo reboot      (then re-run bootstrap)"
-    [ "${FORCE_OLD_OS:-0}" = 1 ] || die "aborting (set FORCE_OLD_OS=1 to continue anyway)"
+    # /etc/dgx-release is not always bumped by OTA updates (device #1 reports 7.5.0 on kernel 7.0.0-1019 after
+    # the 7.6.0 OTA), so this is a warning, not a stop. STRICT_OS=1 makes it fatal.
+    warn "DGX OS $DGX_SWBUILD_VERSION is older than the validated $DGX_OS_MIN (kernel $(uname -r), driver $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null))."
+    warn "If this box never got the OTA update: sudo apt update && sudo apt full-upgrade -y && sudo reboot, then re-run bootstrap."
+    [ "${STRICT_OS:-0}" = 1 ] && die "aborting (STRICT_OS=1)"; sleep 5
   fi
   command -v nvidia-smi >/dev/null && nvidia-smi -L | sed 's/^/    /' || die "nvidia-smi not found"
   command -v docker >/dev/null || die "docker not found (should ship with DGX OS)"
