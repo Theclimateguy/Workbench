@@ -135,7 +135,7 @@
         <button type="button" id="mic" style="display:none" aria-label="Голосовой ввод" title="Голосовой ввод: нажми — говори — нажми ещё раз (или пробел, когда курсор не в поле)">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
         </button>
-        <textarea id="input" rows="1" placeholder="Опиши проблему или задачу… (Enter — отправить, Shift+Enter — новая строка)"></textarea>
+        <textarea id="input" rows="1" placeholder="Опиши проблему или задачу… Enter — отправить"></textarea>
         <button class="primary send" id="send" type="submit">Отправить</button>
       </form>
     </main>
@@ -177,7 +177,7 @@ async function refreshState() {
     $("#foot").innerHTML = (s.targets.length ? s.targets.map(x => `<div><b>${esc(x.name)}</b> · ${esc(x.user)}@${esc(x.host)}</div>`).join("") : `<div>Цель не задана: <span class="mono">support-ctl target add ws user@host</span></div>`)
       + `<div>Документация: ${s.docs.files} файлов, ~${s.docs.tokens_est.toLocaleString("ru")} токенов</div>`;
     if (!sid && s.sessions.length) location.hash = s.sessions[0].id;
-  } catch (e) { $("#llmChip .l").textContent = e.message.slice(0, 60); $("#llmChip .dot").className = "dot bad"; }
+  } catch (e) { $("#llmChip .l").textContent = /503/.test(e.message) ? "агент недоступен" : "ошибка: " + e.message.slice(0, 40); $("#llmChip .dot").className = "dot bad"; }
 }
 
 // ---------- chat rendering ----------

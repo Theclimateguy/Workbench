@@ -10,3 +10,4 @@ __pycache__/
 build/*.pdf
 .DS_Store
 .claude/launch.json
+build/ui-assets
