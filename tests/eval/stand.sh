@@ -22,9 +22,10 @@ case_dir() { ls -d "$HERE"/cases/"$1"-* 2>/dev/null | head -1; }
 
 start_box() {
   docker rm -f "$NAME" >/dev/null 2>&1 || true
+  # cgroup v2 + private cgroupns: systemd mounts its own /sys/fs/cgroup (a host bind mount makes it exit 255)
   docker run -d --name "$NAME" --hostname ws-eval --privileged --cgroupns=private \
     --tmpfs /run --tmpfs /run/lock --tmpfs /tmp --tmpfs /var/log:size=256m,mode=755 \
-    -v /sys/fs/cgroup:/sys/fs/cgroup:rw -p "127.0.0.1:$SSH_PORT:22" "$IMAGE" >/dev/null
+    -p "127.0.0.1:$SSH_PORT:22" "$IMAGE" >/dev/null
   for _ in $(seq 1 30); do docker exec "$NAME" systemctl is-system-running 2>/dev/null | grep -qE 'running|degraded' && break; sleep 1; done
   docker exec "$NAME" systemctl is-active ssh >/dev/null || die "sshd did not start in $NAME (docker logs $NAME)"
   # let the agent in (same onboarding as a real workstation); avahi install is skipped quickly without apt access

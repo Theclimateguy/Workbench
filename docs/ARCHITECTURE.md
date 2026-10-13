@@ -10,7 +10,13 @@
  │  support-opencode  (OpenCode headless `serve`)   → 127.0.0.1:4096   │
  │     ├─ /opt/support/workspace  (AGENTS.md, opencode.json, docs/)    │
  │     └─ MCP target-host (/opt/support/mcp/target_host.py)            │
- │           └─ ssh -i /opt/support/keys/agent_ed25519 → устройство    │
+ │           ├─ ssh  -i /opt/support/keys/agent_ed25519 → Linux-хост   │
+ │           ├─ connectors.py: serial (pyserial) · can (SocketCAN)     │
+ │           │                 modbus (TCP/RTU) · http (device API)    │
+ │           ├─ scan → support-ctl scan (USB, tty, CAN, ARP, mDNS)     │
+ │           └─ workbench_run → docker run workbench:local             │
+ │                 (--cap-drop ALL, без GPU/файлов, сеть none|device)  │
+ │  support-priv (sudo, фиксированные verbs: net-allow/clear, can-restart, arp-scan) │
  │  support-ui / support-ui-tls (FastAPI)  → :8080 http, :8443 https   │
  │     ├─ /static: PWA (manifest, sw.js), STT-worker (Transformers.js) │
  │     └─ /opt/support/ui-assets: Whisper ONNX + ORT wasm (офлайн)     │
@@ -23,19 +29,29 @@
 |---|---|---|
 | LLM | `stack/compose.yaml`, `stack/env/*.env`, `stack/systemd/llm@.service` | `/opt/support-stack`, `/opt/models` |
 | Агент | `agent/workspace/{AGENTS.md,opencode.json}`, `stack/systemd/support-opencode.service` | `/opt/support/workspace`, `~/.opencode/bin/opencode` |
-| Инструменты | `agent/mcp/target_host.py` | `/opt/support/mcp`, аудит `/var/log/support/audit.jsonl` |
+| Инструменты | `agent/mcp/target_host.py`, `agent/mcp/connectors.py` | `/opt/support/mcp`, аудит `/var/log/support/audit.jsonl` |
+| Песочница | `stack/workbench/Dockerfile` | образ `workbench:local`, сеть docker `workbench` (172.31.77.0/24), прогоны `/opt/support/workbench/runs/<ts>/` (скрипт, devices.json, stdout/stderr) |
+| Root-операции | `agent/bin/support-priv` | `/opt/support/bin/support-priv` + правило в `/etc/sudoers.d/90-support-ui` |
+| Стенд приёмки | `tests/eval/` | `/opt/support/tests/eval`, контейнер `evalbox`, устройство `evalbox` |
 | UI | `agent/ui/{support_ui.py,index.html,static/}`, `stack/systemd/support-ui{,-tls}.service` | `/opt/support/ui`, `/opt/support/ui-assets`, пароль `/etc/support/web.env`, TLS `/etc/support/tls` |
 | CLI | `agent/bin/*` | `/opt/support/bin`, `/usr/local/bin/support-ctl` |
 | Сеть | `stack/net/*.yaml` | `/etc/netplan/90-support-*.yaml`, профиль `hotspot` в NM |
-| Цели | — | `/opt/support/targets/*.env`, `/opt/support/keys/` |
+| Устройства | — | `/opt/support/targets/*.env` (`TYPE=ssh` по умолчанию; `serial`, `can`, `modbus`, `http`), `/opt/support/keys/` |
 | Установка | `install/*` | маркеры `/var/lib/support/bootstrap/` |
 
 ## Модель безопасности
 
-- Агент **не исполняет команды на самом устройство** (`bash`, `edit` в `opencode.json` — `deny`). Единственный путь к устройству — MCP `target-host` по SSH под `support-agent` с ключом устройство.
-- Классы инструментов: чтение (`collect_facts`, `run_readonly` с allowlist, `read_file`) — без вопросов; изменение (`run_change`, `write_file`, `reboot_and_wait`) — approval в UI на каждый вызов; проверка — на стороне MCP-сервера, не модели.
-- Всё в аудит: `/var/log/support/audit.jsonl` (время, цель, команда, причина, rc).
-- Вывод устройства для агента — данные, не инструкции (AGENTS.md).
+- Агент **не исполняет команды на самом устройстве GB10** (`bash`, `edit` в `opencode.json` — `deny`). К технике он ходит только через MCP `target-host`: по SSH под `support-agent` с ключом устройства, либо через коннекторы serial/CAN/Modbus/HTTP. Свой код он может выполнить только в песочнице `workbench_run` — контейнер без GPU, без файлов GB10, `--cap-drop ALL`, 2 ГиБ, сеть `none` или только до перечисленных устройств (правила в цепочке `DOCKER-USER` ставит и снимает `support-priv`), проброс только tty/USB тех устройств, что названы в вызове; скрипт целиком виден оператору в карточке.
+- Три класса действий, закреплённые за именами инструментов (гейт — `permission` в `opencode.json`, класс проверяет сервер, а не модель):
+
+  | Класс | Инструменты | Approval |
+  |---|---|---|
+  | чтение | `device_list`, `collect_facts`, `run_readonly` (allowlist), `read_file`, `observe` (serial — только пассивное прослушивание), `scan` | нет |
+  | конфиг | `run_change`, `write_file`, `device_act` (HTTP POST/PUT), `workbench_run` | на каждый вызов; «разрешить всегда» допустимо в сессии |
+  | актуация | `device_actuate` (запись в serial/CAN/Modbus, power/firmware по ssh), `device_recover`, `reboot_and_wait` | на каждый вызов; «всегда» отвергают и UI, и `support_ui.py` (409); обязателен `rollback`; `run_change` отсекает power/firmware/disk-команды регулярным выражением |
+- Всё в аудит: `/var/log/support/audit.jsonl` (время, устройство, инструмент, класс, команда/действие, причина, план отката, rc).
+- Вывод устройства, трафик шины, значения регистров и web-страницы для агента — данные, не инструкции (AGENTS.md; кейс-ловушка 15 в стенде).
+- `support-priv` — единственная sudo-точка стека кроме `systemctl start llm@*`: фиксированные verbs без свободных аргументов (`net-allow RUN IP…`, `net-clear RUN`, `can-restart IFACE BITRATE`, `arp-scan IFACE`).
 - Секреты вне git: `/etc/support/*.env` (root, 600), ключи агента уникальны на устройство.
 - Сеть: vLLM и OpenCode слушают только `127.0.0.1`; наружу — только UI :8080/:8443 с basic-auth (localhost без пароля) и SSH. HTTPS — свой локальный CA (`install/gen-certs.sh`), публичный сертификат отдаётся на `/ca.crt`; закрытый ключ CA не покидает устройство.
 - Голосовой ввод выполняется в браузере оператора (Whisper через Transformers.js, WebGPU/WASM); на устройство только раздача файлов. Распознанный текст попадает в поле ввода, отправка и подтверждения — руками.
@@ -53,6 +69,24 @@
 
 Профили взаимоисключающие (`Conflicts=`), переключение `support-ctl model`.
 
+## Устройства и коннекторы
+
+`targets/NAME.env` описывает устройство; `TYPE=` выбирает коннектор (`agent/mcp/connectors.py`):
+
+| TYPE | Поля | observe (чтение) | device_actuate / device_act | recover |
+|---|---|---|---|---|
+| `ssh` (по умолчанию) | `HOST\|MDNS\|MAC`, `USER`, `PORT`, `KEY` | `collect_facts`, `run_readonly`, `read_file` | `run_change`/`write_file` (конфиг); power/firmware — `device_actuate` | `reboot_and_wait` |
+| `serial` | `PORT=/dev/ttyUSB0 BAUD=115200 [EOL=\n]` | пассивное прослушивание N с | `send:<text>`, `hex:<bytes>`, `dtr:0\|1`, `rts:0\|1`, `break` (актуация) | импульс сброса DTR/RTS |
+| `can` | `IFACE=can0 BITRATE=500000` | `dump [id=0x123]` — кадры за N с, счётчики по id, состояние линка | `send <id>#<hex>` (актуация) | `ip link down/up` через `support-priv` (bus-off) |
+| `modbus` | `HOST= PORT=502 UNIT=1` или `PORT=/dev/ttyUSB1 BAUD=9600` (RTU) | `holding\|input\|coils\|discrete A N`, `id` | `write_register`, `write_registers`, `write_coil` с read-back (актуация) | переподключение и проба |
+| `http` | `URL= [AUTH=u:p \| TOKEN=] [VERIFY=0]` | `GET /path`, `HEAD` | `POST\|PUT\|PATCH\|DELETE /path [body]` (конфиг) | `GET /` |
+
+Инвентаризация — `support-ctl scan` (USB, `/dev/serial/by-id`, CAN-интерфейсы, линки, ARP-сканирование каждого линка ≤ /22, DHCP-аренды прямого кабеля, mDNS); агенту доступна как инструмент `scan`.
+
+## Стенд приёмки
+
+`tests/eval/stand.sh up` поднимает на самом устройстве privileged-контейнер `evalbox` (Ubuntu 24.04, systemd, sshd, `/var/log` — tmpfs 256 МБ), регистрирует его как устройство `evalbox` через штатный `onboard-target.sh`; `cases/NN-*/inject.sh` ломает, агент чинит, `check.sh` судит; `run.py` гоняет всё через UI-API с авто-одобрением и считает метрики PLAN §5.
+
 ## Направление: универсальный полевой инженер
 
-Текущая схема — один тип цели (Linux по SSH). План расширения в [PLAN.md](../PLAN.md): устройство с набором коннекторов (ssh, serial, can, swd, modbus, http, ros2), workbench-песочница для скриптов агента, approval по классу действия, офлайн-библиотека мануалов с поиском, зрение через фото с телефона.
+Фаза A дорожной карты ([PLAN.md](../PLAN.md) §4) закрыта: устройства с коннекторами, песочница, классы approval, инвентаризация, стенд. Дальше: ROS 2 / SWD / WinRM-коннекторы и реальное железо (фаза B), офлайн-библиотека мануалов с поиском (C), зрение через фото с телефона (D), UI v2 ([docs/ui-v2-plan.md](ui-v2-plan.md)).

@@ -20,6 +20,7 @@ log "software -> $SUPPORT_DIR, $STACK_DIR"
 # Never clobber per-device state: targets/, keys/, workspace/docs/ (operator's documentation).
 rsync -a --delete \
   --exclude 'targets/' --exclude 'keys/' --exclude 'workspace/docs/' --exclude 'ui-assets/' --exclude 'manual/' --exclude 'venv/' --exclude '__pycache__/' \
+  --exclude 'tests/' --exclude 'workbench/' \
   "$REPO/agent/" "$SUPPORT_DIR/"
 rsync -a "$REPO/agent/workspace/docs/" "$SUPPORT_DIR/workspace/docs/" --ignore-existing
 rsync -a "$REPO/tests/" "$SUPPORT_DIR/tests/"

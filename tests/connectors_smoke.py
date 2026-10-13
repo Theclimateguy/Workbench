@@ -230,7 +230,7 @@ async def main(a) -> int:
                 out = await call("device_actuate", device="uart", action="send:hello", reason="t", rollback="console command, no state change", seconds=1.5)
                 check("echo: hello" in out, "serial device_actuate send + reply", out)
                 out = await call("device_recover", device="uart", reason="t")
-                check("reset pulse" in out, "serial device_recover (DTR pulse)", out)
+                check("reset pulse" in out, "serial device_recover (DTR pulse; a pty has no modem lines, so 'not possible' is fine)", out)
             else:
                 print("skip serial (needs Linux + socat)")
 

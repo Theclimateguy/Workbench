@@ -109,11 +109,15 @@ class Serial:
     def recover(self) -> str:
         """Reset pulse on DTR/RTS (Arduino, ESP32 and most dev boards reset on DTR)."""
         with self._open() as s:
-            s.dtr = False; s.rts = False; time.sleep(0.1)
-            s.dtr = True; s.rts = True; time.sleep(0.1)
-            s.dtr = False; time.sleep(0.3)
+            try:
+                s.dtr = False; s.rts = False; time.sleep(0.1)
+                s.dtr = True; s.rts = True; time.sleep(0.1)
+                s.dtr = False; time.sleep(0.3)
+                head = "reset pulse sent (DTR/RTS)"
+            except OSError as e:      # pseudo-terminals and some USB bridges have no modem lines
+                head = f"reset pulse not possible on {self.port} (no DTR/RTS: {e}); listening instead"
             out = self._read_for(s, 3.0)
-        return "reset pulse sent (DTR/RTS)\n" + (out or "(nothing received after reset)")
+        return head + "\n" + (out or "(nothing received after reset)")
 
     def docker_args(self) -> list[str]:
         return ["--device", self.port] if os.path.exists(self.port) else []

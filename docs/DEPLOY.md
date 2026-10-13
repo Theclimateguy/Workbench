@@ -58,13 +58,14 @@ cd ~/Workbench
 | 1 | system | пакеты из `install/apt-packages.txt`, группа docker, запрет сна, выключение OOBE-хотспота |
 | 2 | venv | `/opt/support/venv` по `install/requirements.txt` |
 | 3 | opencode | движок агента, версия из lock |
-| 4 | deploy | `agent/` → `/opt/support`, `stack/` → `/opt/support-stack`, юниты, netplan-профили `lan`/`direct` |
+| 4 | deploy | `agent/` → `/opt/support`, `stack/` → `/opt/support-stack`, юниты, sudo-правила (`systemctl start llm@*`, `support-priv`), netplan-профили `lan`/`direct` |
 | 5 | vllm-image | `docker pull` по digest, проверка GPU в контейнере |
+| 5b | workbench-image | `support-ctl workbench build` — образ песочницы `workbench:local` (~355 МиБ) и сеть docker `workbench`; при отсутствии интернета — предупреждение, собрать позже |
 | 6 | ui-assets | Transformers.js + Whisper ONNX (~0.35 ГиБ) в `/opt/support/ui-assets` для голосового ввода в браузере |
 | 6 | models | `hf download` по ревизиям из lock в `/opt/models` |
 | 7 | services | ключ агента, `llm@fast` enable + старт, web-пароль, локальный CA + сертификат, `support-opencode`, `support-ui` (:8080), `support-ui-tls` (:8443) |
 | 8 | desktop | ярлык «Spark Support», мануал на рабочий стол, хотспот auto |
-| 9 | verify | `bench.py`, цель `self`, `mcp_smoke.py` |
+| 9 | verify | `bench.py`, цель `self`, `mcp_smoke.py`, `connectors_smoke.py` (симуляторы serial/CAN/Modbus/HTTP + песочница) |
 
 В конце — `support-ctl status` с адресами. Первый прогон на DGX Spark FE (2026-10-13) выявил и закрыл в установщике: `sudo -v` просит пароль даже при NOPASSWD (теперь `sudo -n true`), лог загрузки весов до появления `/opt` (путь настраиваемый), проверка GPU в контейнере через entrypoint образа (теперь `--entrypoint nvidia-smi`), отсутствие nvidia-runtime в docker на FE (регистрируется автоматически), кратковременный отказ DNS после `netplan apply` (ожидание с перезапуском resolved). Загрузки на узком канале: pip и `docker pull` конкурируют с `hf download` — при `--with-deep` на медленной сети лучше сначала `--skip-models`, потом `fetch-models.sh`. Дальше по мануалу: `target add`, документация, `docs reload`.
 
@@ -82,7 +83,9 @@ rsync -a /Volumes/SSD/models/ admin@10.77.0.1:/opt/models/            # пото
 
 ## 4. Обновления
 
-- **Софт** (агент, UI, скрипты, конфиги): на Spark `support-ctl update` — `git pull` + `deploy.sh`. Веса, цели, ключи, документация не трогаются.
+- **Софт** (агент, UI, скрипты, конфиги): на Spark `support-ctl update` — `git pull` + `deploy.sh`. Веса, цели, ключи, документация, прогоны песочницы не трогаются.
+- **Песочница на уже развёрнутом устройстве** (обновление с версии до 2026-10-14): после `support-ctl update` один раз `support-ctl workbench build` (нужен интернет, ~2 мин); проверка — `/opt/support/venv/bin/python /opt/support/tests/connectors_smoke.py --ssh-target self`.
+- **Стенд приёмки** (не обязателен в поле): `tests/eval/stand.sh up` и `tests/eval/run.py` — см. [tests/eval/README.md](../tests/eval/README.md); контейнер `evalbox` можно снести `stand.sh down`.
 - **Голосовой ввод / PWA на уже развёрнутом Spark**: `support-ctl update`, затем `install/fetch-ui-assets.sh` (нужен интернет) и `support-ctl web` (выпустит сертификат и включит `support-ui-tls`).
 - **Версии** (OpenCode, vLLM, модели): правка `install/versions.lock` в репозитории → `support-ctl update` → для образа/моделей вручную `bootstrap.sh` после удаления соответствующего маркера (`sudo rm /var/lib/support/bootstrap/vllm-image.done`).
 - **ОС**: `sudo apt full-upgrade` — отдельно, перед выездом, с последующим `support-ctl bench` (минимум 60 tok/s на fast — норма 95).
@@ -99,6 +102,9 @@ rsync -a /Volumes/SSD/models/ admin@10.77.0.1:/opt/models/            # пото
 | `llm@fast failed` | `journalctl -u llm@fast -n 100`; частое — не хватило памяти из-за page cache: `sudo systemctl restart llm@fast` (юнит сам сбрасывает кэш) |
 | vLLM не стартует на новой DGX OS | откатить образ: в `versions.lock` другая версия → `rm vllm-image.done` → `bootstrap.sh`; известные рабочие пары — `docs/bench-log.md` |
 | `verify`: `mcp_smoke` падает | `support-ctl target test self`; если нет sshd — `sudo systemctl enable --now ssh` |
+| `connectors_smoke`: `skip workbench` / `workbench image missing` | `support-ctl workbench build` (интернет); `docker network ls` должен показывать `workbench` |
+| `workbench_run`: `cannot restrict the sandbox network` | `sudo -n /opt/support/bin/support-priv net-clear test` должно работать без пароля — проверить `/etc/sudoers.d/90-support-ui` (ставит `deploy.sh`) |
+| CAN-адаптер есть, `observe` → `cannot open can0` | `sudo /opt/support/bin/support-priv can-restart can0 500000` (или `device_recover` из агента); для USB-CAN gs_usb — `lsmod \| grep gs_usb` |
 
 ## 6. Клонирование уже настроенного Spark
 
