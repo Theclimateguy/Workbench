@@ -38,6 +38,16 @@
   .chip { display:inline-flex; align-items:center; gap:6px; color:var(--muted); white-space:nowrap }
   .dot { width:8px; height:8px; border-radius:50%; background:var(--muted) } .dot.ok { background:var(--ok) } .dot.bad { background:var(--bad) } .dot.warn { background:var(--warn) }
   .busy { color:var(--muted) }
+  #profile button.loading { color:var(--accent) }
+  .q { max-width:760px; background:var(--panel); border-radius:12px; box-shadow:0 0 0 1px var(--line2), 0 4px 14px rgba(0,0,0,.06); padding:14px 16px; display:flex; gap:14px; align-items:flex-start }
+  .q .body2 { flex:1; display:flex; flex-direction:column; gap:10px; min-width:0 }
+  .q .title { font-weight:600; font-size:14px } .q .text { font-size:14px }
+  .q .opts { display:flex; flex-direction:column; gap:6px }
+  .q .opt { display:flex; gap:10px; align-items:flex-start; padding:8px 10px; border:1px solid var(--line); border-radius:8px; cursor:pointer; background:var(--panel) }
+  .q .opt:hover { background:var(--bg) } .q .opt.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) }
+  .q .opt b { font-weight:600 } .q .opt span { color:var(--muted); font-size:12px }
+  .q input[type=text] { font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink) }
+  .q .actions { display:flex; gap:8px; justify-content:flex-end }
 
   /* body */
   .body { flex:1; min-height:0; display:flex }
@@ -109,8 +119,13 @@
       </div>
       <span id="busy" class="busy" style="display:none">думает…</span>
       <button type="button" id="abort" style="display:none">Стоп</button>
+      <button type="button" id="exportSession" title="Скачать сессию как Markdown">Экспорт</button>
     </div>
     <div class="right">
+      <div class="segment" id="profile" title="Профиль модели: fast — Qwen3.6 35B (быстро), deep — Nemotron 120B (медленнее, глубже). Переключение занимает 6–12 минут.">
+        <button type="button" data-prof="fast">fast</button>
+        <button type="button" data-prof="deep">deep</button>
+      </div>
       <span class="chip" id="llmChip"><span class="dot"></span><span class="l">LLM</span></span>
       <span class="chip" id="targetChip"><span class="dot"></span><span class="l">цель</span></span>
       <button type="button" id="installPwa" style="display:none" title="Установить как приложение">Установить</button>
@@ -168,8 +183,9 @@ $("#theme").onclick = () => applyTheme(document.documentElement.dataset.theme ==
 async function refreshState() {
   try {
     const s = await api("/api/state");
-    const llm = $("#llmChip"); llm.querySelector(".dot").className = "dot " + (s.llm.up ? "ok" : "bad");
-    llm.querySelector(".l").textContent = s.llm.up ? `${s.profiles.fast === "active" ? "fast" : s.profiles.deep === "active" ? "deep" : "LLM"} · ${s.llm.models[0] || ""}` : `LLM offline (${s.profiles.fast}/${s.profiles.deep})`;
+    renderProfile(s);
+    const llm = $("#llmChip"); llm.querySelector(".dot").className = "dot " + (s.llm.up ? "ok" : (s.profiles.fast === "activating" || s.profiles.deep === "activating" || switching) ? "warn" : "bad");
+    llm.querySelector(".l").textContent = s.llm.up ? (s.profiles.fast === "active" ? "Qwen3.6 35B" : "Nemotron 120B") : (s.profiles.fast === "activating" || s.profiles.deep === "activating" || switching) ? "модель загружается…" : "LLM offline";
     const t = $("#targetChip"); targetName = s.targets[0]?.name || "";
     t.querySelector(".dot").className = "dot " + (s.targets.length ? "ok" : "warn");
     t.querySelector(".l").textContent = s.targets.length ? s.targets.map(x => x.name).join(", ") : "нет целей";
@@ -197,6 +213,17 @@ function renderPerm(p, calls) {
       <button type="button" class="primary" data-resp="once">Разрешить</button>
     </div></div></div>`;
 }
+const ICON_Q = '<svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="#0A84FF"/><path d="M13.5 14.5a4.5 4.5 0 1 1 6.3 4.1c-1.2.6-1.8 1.3-1.8 2.6" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round"/><circle cx="18" cy="25.5" r="1.6" fill="#fff"/></svg>';
+function renderQuestion(q) {
+  // one card per request; several questions inside are rare — render them stacked, answers collected in order
+  const blocks = q.questions.map((qi, n) => {
+    const opts = (qi.options || []).map((o, k) => `<label class="opt" data-q="${n}" data-k="${k}"><input type="${qi.multiple ? "checkbox" : "radio"}" name="q${q.id}_${n}" value="${esc(o.label)}" style="margin-top:3px"><div><b>${esc(o.label)}</b><br><span>${esc(o.description || "")}</span></div></label>`).join("");
+    const custom = qi.custom ? `<input type="text" data-custom="${n}" placeholder="Свой ответ…">` : "";
+    return `<div class="title">${esc(qi.header || "Вопрос")}</div><div class="text">${fmt(qi.question || "")}</div><div class="opts">${opts}${custom}</div>`;
+  }).join("<hr>");
+  return `<div class="q" data-qid="${q.id}">${ICON_Q}<div class="body2">${blocks}
+    <div class="actions"><button type="button" data-qact="reject">Отклонить</button><button type="button" class="primary" data-qact="reply">Ответить</button></div></div></div>`;
+}
 function renderMessages(d) {
   const calls = {};
   d.messages.forEach(m => m.parts.forEach(p => { if (p.type === "tool" && p.callID) calls[p.callID] = p; }));
@@ -220,7 +247,7 @@ function renderMessages(d) {
     }).join("");
     const err = m.error ? `<div class="err">Ошибка: ${esc(m.error)}</div>` : "";
     return `<div><div class="meta">Агент · ${time}</div><div style="display:flex;flex-direction:column;gap:8px">${parts}${err}</div></div>`;
-  }).join("") + d.pending.map(p => renderPerm(p, calls)).join("");
+  }).join("") + d.pending.map(p => renderPerm(p, calls)).join("") + (d.questions || []).map(renderQuestion).join("");
   if (html !== lastHTML) {
     $("#log").innerHTML = html; lastHTML = html;
     if (stickBottom) scrollToBottom();
@@ -243,7 +270,7 @@ async function poll() {
   catch (e) { $("#log").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 function selectSession(id) {
-  sid = id; lastHTML = ""; stickBottom = true;
+  sid = id; lastHTML = ""; stickBottom = true; $("#log").innerHTML = "";   // clean slate until the session's own messages arrive
   document.querySelectorAll(".sessions a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#"+id));
   showView("chat"); poll();
 }
@@ -260,12 +287,34 @@ function showView(v) {
 async function loadAudit() {
   try {
     const a = await api("/api/audit?n=200");
-    $("#audit").innerHTML = `<table><thead><tr><th>Время</th><th>Цель</th><th>Инструмент</th><th>Команда / файл</th><th>Результат</th></tr></thead><tbody>` +
+    $("#audit").innerHTML = `<div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px"><a class="btn" href="/api/audit/export?format=csv" download><button type="button">Экспорт CSV</button></a><a href="/api/audit/export" download><button type="button">Экспорт JSONL</button></a></div><table><thead><tr><th>Время</th><th>Цель</th><th>Инструмент</th><th>Команда / файл</th><th>Результат</th></tr></thead><tbody>` +
       a.map(e => `<tr><td>${esc((e.ts||"").replace("T"," ").slice(0,19))}</td><td>${esc(e.target||"")}</td><td>${esc(e.tool||"")}</td><td class="c">${esc(e.cmd||e.path||"")}${e.reason ? `<div style="color:var(--muted)">${esc(e.reason)}</div>` : ""}</td><td>${e.rejected ? '<span class="rej">отклонено защитой</span>' : e.rc != null ? "rc=" + e.rc : ""}</td></tr>`).join("") +
       `</tbody></table>`;
   } catch (e) { $("#audit").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 $("#tabChat").onclick = () => showView("chat"); $("#tabAudit").onclick = () => showView("audit");
+$("#exportSession").onclick = () => { if (sid) location.href = `/api/session/${sid}/export`; };
+
+// ---------- model profile toggle ----------
+let switching = null;
+$("#profile").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-prof]"); if (!b || b.classList.contains("active")) return;
+  const p = b.dataset.prof;
+  if (!confirm(`Переключить модель на «${p}»? Текущая выгрузится, загрузка новой займёт ${p === "deep" ? "10–12" : "5–6"} минут; идущий ответ агента прервётся.`)) return;
+  try { await api("/api/model", {method:"POST", body: JSON.stringify({profile: p})}); switching = p; refreshState(); }
+  catch (err) { alert("Не удалось переключить: " + err.message); }
+});
+function renderProfile(s) {
+  const active = s.profiles.fast === "active" ? "fast" : s.profiles.deep === "active" ? "deep" : null;
+  const activating = s.profiles.fast === "activating" ? "fast" : s.profiles.deep === "activating" ? "deep" : null;
+  if (s.llm.up) switching = null;
+  document.querySelectorAll("#profile button").forEach(b => {
+    const p = b.dataset.prof;
+    b.classList.toggle("active", s.llm.up && p === active);
+    b.classList.toggle("loading", !s.llm.up && (p === activating || p === active || p === switching));
+    b.textContent = (!s.llm.up && (p === activating || p === active || p === switching)) ? p + "…" : p;
+  });
+}
 
 // ---------- actions ----------
 window.addEventListener("hashchange", () => selectSession(location.hash.slice(1)));
@@ -277,6 +326,22 @@ $("#form").onsubmit = async e => {
 $("#input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form").requestSubmit(); } });
 $("#abort").onclick = () => api(`/api/session/${sid}/abort`, {method:"POST"});
 $("#log").addEventListener("click", async e => {
+  const qb = e.target.closest("button[data-qact]");
+  if (qb) {
+    const card = qb.closest(".q"), qid = card.dataset.qid;
+    if (qb.dataset.qact === "reject") { await api(`/api/session/${sid}/question/${qid}`, {method:"POST", body: JSON.stringify({reject: true})}); poll(); return; }
+    const n = Math.max(1, new Set([...card.querySelectorAll("[data-q]")].map(x => x.dataset.q)).size || 1);
+    const answers = [];
+    for (let i = 0; i < n; i++) {
+      const picked = [...card.querySelectorAll(`input[name="q${qid}_${i}"]:checked`)].map(x => x.value);
+      const custom = card.querySelector(`input[data-custom="${i}"]`)?.value.trim();
+      if (custom) picked.push(custom);
+      answers.push(picked);
+    }
+    if (answers.every(a => !a.length)) { alert("Выберите вариант или впишите ответ"); return; }
+    card.querySelectorAll("button").forEach(x => x.disabled = true);
+    await api(`/api/session/${sid}/question/${qid}`, {method:"POST", body: JSON.stringify({answers})}); poll(); return;
+  }
   const b = e.target.closest("button[data-resp]"); if (!b) return;
   const pid = b.closest(".perm").dataset.pid; b.closest(".actions").querySelectorAll("button").forEach(x => x.disabled = true);
   await api(`/api/session/${sid}/permission/${pid}`, {method:"POST", body: JSON.stringify({response: b.dataset.resp})}); poll();

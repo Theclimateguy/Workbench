@@ -222,8 +222,13 @@ async def get_session(sid: str):
                     "error": _err_text(info.get("error")),
                     "parts": norm})
     perms = [p for p in (await oc("GET", "/permission")).json() if p.get("sessionID") == sid]
+    questions = []
+    try:
+        questions = [q for q in (await oc("GET", "/question")).json() if q.get("sessionID") == sid]
+    except HTTPException:
+        pass
     busy = bool(status.get(sid)) and status.get(sid, {}).get("type") not in (None, "idle")
-    return {"messages": out, "pending": perms, "busy": busy}
+    return {"messages": out, "pending": perms, "questions": questions, "busy": busy}
 
 
 _active_model: dict = {"at": 0.0, "id": None}
@@ -275,6 +280,91 @@ async def permission(sid: str, pid: str, body: dict):
         raise HTTPException(400, "response must be once|always|reject")
     await oc("POST", f"/session/{sid}/permissions/{pid}", json={"response": resp})
     return {"ok": True}
+
+
+@app.post("/api/session/{sid}/question/{qid}")
+async def question_reply(sid: str, qid: str, body: dict):
+    """Answer (or reject) a question the agent asked through its `question` tool; the turn is blocked until then."""
+    if (body or {}).get("reject"):
+        await oc("POST", f"/question/{qid}/reject")
+        return {"ok": True}
+    answers = (body or {}).get("answers")
+    if not isinstance(answers, list):
+        raise HTTPException(400, "answers must be a list of lists of labels")
+    await oc("POST", f"/question/{qid}/reply", json={"answers": answers})
+    return {"ok": True}
+
+
+@app.post("/api/model")
+async def switch_model(body: dict):
+    """Start llm@fast or llm@deep (Conflicts= in the unit stops the other). Needs the sudoers rule from deploy.sh."""
+    prof = (body or {}).get("profile")
+    if prof not in ("fast", "deep"):
+        raise HTTPException(400, "profile must be fast|deep")
+    r = subprocess.run(["sudo", "-n", "systemctl", "start", f"llm@{prof}"], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise HTTPException(500, f"cannot start llm@{prof}: {(r.stderr or r.stdout).strip()[:200]}")
+    _active_model.update(at=0.0)
+    return {"ok": True, "profile": prof}
+
+
+@app.get("/api/audit/export")
+async def audit_export(format: str = "jsonl"):
+    import csv
+    import datetime as dt
+    import io
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
+    if not AUDIT_LOG.exists():
+        raise HTTPException(404, "no audit log yet")
+    if format == "csv":
+        rows = []
+        for ln in AUDIT_LOG.read_text().splitlines():
+            try:
+                rows.append(json.loads(ln))
+            except json.JSONDecodeError:
+                pass
+        cols = ["ts", "target", "tool", "cmd", "path", "reason", "rc", "rejected", "mode"]
+        buf = io.StringIO(); w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore"); w.writeheader(); w.writerows(rows)
+        return Response(buf.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="audit-{os.uname().nodename}-{stamp}.csv"'})
+    return FileResponse(AUDIT_LOG, media_type="application/x-ndjson", filename=f"audit-{os.uname().nodename}-{stamp}.jsonl")
+
+
+@app.get("/api/session/{sid}/export")
+async def session_export(sid: str):
+    """Whole session as Markdown: messages, tool calls with their output, errors."""
+    import datetime as dt
+    info = (await oc("GET", f"/session/{sid}")).json()
+    msgs = (await oc("GET", f"/session/{sid}/message")).json()
+    def ts(ms):
+        return dt.datetime.fromtimestamp(ms / 1000).strftime("%Y-%m-%d %H:%M:%S") if ms else ""
+    lines = [f"# {info.get('title') or sid}", "", f"Сессия `{sid}`, создана {ts(info.get('time', {}).get('created'))}, "
+             f"экспорт {dt.datetime.now().strftime('%Y-%m-%d %H:%M')} с {os.uname().nodename}", ""]
+    for m in msgs:
+        i, parts = m["info"], m["parts"]
+        who = "Оператор" if i["role"] == "user" else f"Агент ({i.get('modelID') or ''})"
+        lines += [f"## {who} · {ts(i.get('time', {}).get('created'))}", ""]
+        for p in parts:
+            t = p.get("type")
+            if t == "text":
+                lines += [p.get("text", ""), ""]
+            elif t == "reasoning" and p.get("text"):
+                lines += ["<details><summary>ход мыслей</summary>", "", p["text"], "", "</details>", ""]
+            elif t == "tool":
+                st = p.get("state") or {}
+                inp = st.get("input") or {}
+                lines += [f"**{p.get('tool')}** · {st.get('status')}" + (f" · {inp.get('target')}" if inp.get("target") else ""), ""]
+                if inp:
+                    lines += ["```json", json.dumps(inp, ensure_ascii=False, indent=1)[:4000], "```", ""]
+                out = st.get("output") or st.get("error")
+                if out:
+                    lines += ["```", str(out)[:20000], "```", ""]
+        err = _err_text(i.get("error"))
+        if err:
+            lines += [f"> Ошибка: {err}", ""]
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
+    return Response("\n".join(lines), media_type="text/markdown; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="session-{sid[-6:]}-{stamp}.md"'})
 
 
 @app.get("/api/audit")

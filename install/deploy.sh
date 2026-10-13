@@ -34,6 +34,11 @@ for u in llm@.service support-opencode.service support-ui.service support-ui-tls
 done
 sudo systemctl daemon-reload
 
+log "sudo rule: the web UI may switch LLM profiles"
+printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl start llm@fast, /usr/bin/systemctl start llm@deep, /usr/bin/systemctl stop llm@fast, /usr/bin/systemctl stop llm@deep, /usr/bin/systemctl restart llm@fast, /usr/bin/systemctl restart llm@deep\n' "$RUN_USER" \
+  | sudo tee /etc/sudoers.d/90-support-ui >/dev/null && sudo chmod 440 /etc/sudoers.d/90-support-ui
+sudo visudo -cf /etc/sudoers.d/90-support-ui >/dev/null || { sudo rm -f /etc/sudoers.d/90-support-ui; log "  sudoers rule rejected, removed"; }
+
 log "network profiles for the RJ45 port (lan + direct fallback)"
 RJ45=$(ip -o link | awk -F': ' '$2 ~ /^en/ && $2 !~ /docker|veth|br-/ {print $2}' | head -1)
 # Skip entirely when the profiles already exist under any name (first device got them via nmcli) —
