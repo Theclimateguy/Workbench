@@ -260,7 +260,7 @@ cmd_version() {
   echo "  vLLM:      $(grep -h '^VLLM_IMAGE=' "$STACK_DIR"/env/fast.env | cut -d= -f2)"
   for d in /opt/models/*/; do [ -f "$d.workbench-rev" ] && echo "  model:     $(basename "$d") @ $(cut -c1-12 "$d.workbench-rev") ($(du -sh "$d" | cut -f1))"; done
   local repo; repo=$(cat /etc/support/workbench.path 2>/dev/null || true)
-  [ -n "$repo" ] && echo "  workbench: $(git -C "$repo" log -1 --format='%h %ci' 2>/dev/null)"
+  [ -n "$repo" ] && echo "  workbench: $(git -C "$repo" log -1 --format='%h %ci' 2>/dev/null || echo "$repo (copy without git)")"
 }
 
 case "${1:-}" in
