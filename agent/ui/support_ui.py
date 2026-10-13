@@ -42,7 +42,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 ASSETS_DIR = Path(os.environ.get("SUPPORT_UI_ASSETS", "/opt/support/ui-assets"))
 TLS_DIR = Path(os.environ.get("SUPPORT_TLS_DIR", "/etc/support/tls"))
 INDEX_HTML = (Path(__file__).parent / "index.html").read_text()
-PUBLIC_PATHS = ("/ca.crt", "/static/manifest.json", "/static/icons/")   # no login needed
+PUBLIC_PATHS = ("/ca.crt", "/sw.js", "/static/manifest.json", "/static/icons/")   # no login needed
 
 app = FastAPI(title="support-ui")
 client = httpx.AsyncClient(base_url=OPENCODE_URL, auth=(OC_USER, OC_PASS) if OC_PASS else None,
@@ -125,6 +125,12 @@ def _normalize_part(p: dict) -> dict | None:
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return INDEX_HTML
+
+
+@app.get("/sw.js")
+async def service_worker():
+    """Served from the root so the worker's scope covers the whole app (a /static/ URL would only cover /static/)."""
+    return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/ca.crt")

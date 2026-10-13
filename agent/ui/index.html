@@ -286,7 +286,7 @@ refreshState(); if (sid) selectSession(sid);
 setInterval(poll, 1500); setInterval(refreshState, 10000);
 
 // ---------- PWA ----------
-if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/static/sw.js").catch(() => {});
+if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js").catch(() => {});
 let installEvt = null;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; $("#installPwa").style.display = ""; });
 $("#installPwa").onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $("#installPwa").style.display = "none"; };

@@ -1,6 +1,6 @@
 // Service worker: keeps the UI shell and the (immutable, versioned) vendor bundle available offline.
 // API calls are always network-only; model files are cached by Transformers.js itself (Cache API).
-const VERSION = "spark-support-v6";
+const VERSION = "spark-support-v7";
 const SHELL = ["/", "/static/manifest.json", "/static/stt-worker.js", "/static/lib/marked.umd.js", "/static/icons/icon-48.png", "/static/icons/icon-192.png", "/static/icons/icon-512.png"];
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
