@@ -82,6 +82,20 @@ def one_completion(url, model, prompt, max_tokens, stream=False):
     return {"tokens": n, "seconds": dt, "tps": n / dt if dt else 0, "ttft": ttft, "prompt_tokens": None}
 
 
+def content_check(url, model):
+    """Plain chat answer must carry text in `content` with reasoning kept apart (`reasoning_content`).
+    Catches the gpt-oss/Harmony failure mode on SM121 where the first token is wrong and content comes back null."""
+    body = {"model": model, "messages": [{"role": "user", "content": "Ответь одной короткой фразой: что такое systemd?"}],
+            "max_tokens": 400, "temperature": 0}
+    data = json.load(post(url, body))
+    msg = data["choices"][0]["message"]
+    content = (msg.get("content") or "").strip()
+    reasoning = (msg.get("reasoning_content") or msg.get("reasoning") or "").strip()
+    finish = data["choices"][0].get("finish_reason")
+    ok = bool(content) and finish == "stop"
+    return ok, content[:80], len(reasoning), finish
+
+
 def tool_call_check(url, model):
     body = {
         "model": model,
@@ -140,9 +154,11 @@ def main():
         print(f"{a.concurrency} concurrent: {tot} tok in {dt:.1f}s = {tot/dt:.1f} tok/s aggregate, "
               f"{tot/dt/a.concurrency:.1f} tok/s per stream")
 
+    c_ok, preview, rlen, finish = content_check(a.url, a.model)
+    print(f"content: {'OK' if c_ok else 'FAIL'} (finish={finish}, reasoning {rlen} chars) -> {preview!r}")
     ok, args = tool_call_check(a.url, a.model)
     print(f"tool-call: {'OK' if ok else 'FAIL'} -> {args}")
-    sys.exit(0 if ok else 1)
+    sys.exit(0 if ok and c_ok else 1)
 
 
 if __name__ == "__main__":
