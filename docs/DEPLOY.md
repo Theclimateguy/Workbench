@@ -66,7 +66,7 @@ cd ~/Workbench
 | 8 | desktop | ярлык «Spark Support», мануал на рабочий стол, хотспот auto |
 | 9 | verify | `bench.py`, цель `self`, `mcp_smoke.py` |
 
-В конце — `support-ctl status` с адресами. Первый прогон на DGX Spark FE (2026-10-13) потребовал только правки sudo-проверки и пути лога — остальное прошло без ручных шагов. Дальше по мануалу: `target add`, документация, `docs reload`.
+В конце — `support-ctl status` с адресами. Первый прогон на DGX Spark FE (2026-10-13) выявил и закрыл в установщике: `sudo -v` просит пароль даже при NOPASSWD (теперь `sudo -n true`), лог загрузки весов до появления `/opt` (путь настраиваемый), проверка GPU в контейнере через entrypoint образа (теперь `--entrypoint nvidia-smi`), отсутствие nvidia-runtime в docker на FE (регистрируется автоматически), кратковременный отказ DNS после `netplan apply` (ожидание с перезапуском resolved). Загрузки на узком канале: pip и `docker pull` конкурируют с `hf download` — при `--with-deep` на медленной сети лучше сначала `--skip-models`, потом `fetch-models.sh`. Дальше по мануалу: `target add`, документация, `docs reload`.
 
 ## 3a. Веса без интернета на устройстве
 

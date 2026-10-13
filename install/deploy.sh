@@ -53,7 +53,11 @@ for f in 90-support-lan.yaml 90-support-direct.yaml; do
     NETPLAN_CHANGED=1
   fi
 done
-[ -n "${NETPLAN_CHANGED:-}" ] && { sudo netplan apply >/dev/null 2>&1 || log "netplan apply failed — check /etc/netplan"; }
+if [ -n "${NETPLAN_CHANGED:-}" ]; then
+  sudo netplan apply >/dev/null 2>&1 || log "netplan apply failed — check /etc/netplan"
+  # NetworkManager re-reads its profiles; systemd-resolved can answer "server misbehaving" for a while afterwards
+  for _ in 1 2 3 4 5 6; do getent hosts registry-1.docker.io >/dev/null 2>&1 && break; sleep 5; sudo systemctl restart systemd-resolved; done
+fi
 
 if [ -d "$SUPPORT_DIR/venv" ]; then
   log "python deps"

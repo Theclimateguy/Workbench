@@ -65,6 +65,10 @@ if phase system; then
   # shellcheck disable=SC2046
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $(grep -vE '^\s*(#|$)' "$REPO/install/apt-packages.txt") >/dev/null
   sudo usermod -aG docker "$RUN_USER"
+  # DGX Spark FE ships docker without the nvidia runtime registered (no /etc/docker/daemon.json); ASUS OEM has it.
+  if ! docker info 2>/dev/null | grep -qE "Runtimes:.*nvidia"; then
+    sudo nvidia-ctk runtime configure --runtime=docker >/dev/null 2>&1 && sudo systemctl restart docker && echo "    nvidia runtime registered in docker"
+  fi
   # A field box must not fall asleep while the agent works.
   sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1 || true
   if [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
@@ -108,7 +112,7 @@ if phase vllm-image; then
   sudo docker tag "vllm/vllm-openai@$VLLM_IMAGE_DIGEST" "$VLLM_IMAGE"
   echo "    $VLLM_IMAGE ($(sudo docker image inspect "$VLLM_IMAGE" --format '{{.Size}}' | awk '{printf "%.1f GiB", $1/1073741824}'))"
   # GPU visible inside containers?
-  sudo docker run --rm --gpus all "$VLLM_IMAGE" nvidia-smi -L 2>/dev/null | sed 's/^/    container sees: /' || die "GPU not visible in container — check nvidia-container-toolkit"
+  sudo docker run --rm --gpus all --entrypoint nvidia-smi "$VLLM_IMAGE" -L 2>/dev/null | sed "s/^/    container sees: /" || die "GPU not visible in container — check nvidia-container-toolkit"
   done_ vllm-image
 fi
 
