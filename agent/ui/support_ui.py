@@ -106,6 +106,16 @@ def _docs_status() -> dict:
     return {"files": len(files), "bytes": nbytes, "tokens_est": nbytes * 2 // 7}
 
 
+def _err_text(err) -> str | None:
+    if not err:
+        return None
+    if isinstance(err, dict):
+        data = err.get("data") or {}
+        msg = data.get("message") if isinstance(data, dict) else None
+        return msg or err.get("message") or err.get("name") or json.dumps(err)[:200]
+    return str(err)[:200]
+
+
 def _normalize_part(p: dict) -> dict | None:
     t = p.get("type")
     if t == "text":
@@ -206,14 +216,35 @@ async def get_session(sid: str):
     for m in msgs:
         info, parts = m["info"], m["parts"]
         norm = [x for x in (_normalize_part(p) for p in parts) if x]
-        if not norm:
-            continue
+        if not norm and not info.get("error"):
+            continue                      # a failed turn has no parts but must still show its error
         out.append({"id": info["id"], "role": info["role"], "time": info.get("time", {}).get("created"),
-                    "error": (info.get("error") or {}).get("data", {}).get("message") if info.get("error") else None,
+                    "error": _err_text(info.get("error")),
                     "parts": norm})
     perms = [p for p in (await oc("GET", "/permission")).json() if p.get("sessionID") == sid]
     busy = bool(status.get(sid)) and status.get(sid, {}).get("type") not in (None, "idle")
     return {"messages": out, "pending": perms, "busy": busy}
+
+
+_active_model: dict = {"at": 0.0, "id": None}
+
+
+async def active_model() -> str | None:
+    """Which profile vLLM is serving right now (fast/deep). Sessions default to spark/fast in opencode.json;
+    after `support-ctl model deep` every prompt must target the model that actually exists."""
+    import time
+    if time.time() - _active_model["at"] < 10:
+        return _active_model["id"]
+    mid = None
+    try:
+        async with httpx.AsyncClient(timeout=3) as c:
+            r = await c.get(f"{LLM_URL}/v1/models")
+            ids = [m["id"] for m in r.json().get("data", [])]
+            mid = next((i for i in ids if i in ("fast", "deep")), ids[0] if ids else None)
+    except Exception:
+        pass
+    _active_model.update(at=time.time(), id=mid)
+    return mid
 
 
 @app.post("/api/session/{sid}/prompt")
@@ -221,7 +252,13 @@ async def prompt(sid: str, body: dict):
     text = (body or {}).get("text", "").strip()
     if not text:
         raise HTTPException(400, "empty prompt")
-    await oc("POST", f"/session/{sid}/prompt_async", json={"parts": [{"type": "text", "text": text}]})
+    payload: dict = {"parts": [{"type": "text", "text": text}]}
+    mid = await active_model()
+    if mid:
+        payload["model"] = {"providerID": "spark", "modelID": mid}
+    else:
+        raise HTTPException(503, "LLM is not serving any model (support-ctl status)")
+    await oc("POST", f"/session/{sid}/prompt_async", json=payload)
     return {"ok": True}
 
 
