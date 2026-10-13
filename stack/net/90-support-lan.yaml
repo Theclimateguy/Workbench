@@ -17,6 +17,8 @@ network:
           ethernet._: ""
           ipv4.dhcp-timeout: "20"
           ipv4.may-fail: "false"
+          ipv4.route-metric: "700"
+          ipv6.route-metric: "700"
           ipv6.addr-gen-mode: "default"
           ipv6.ip6-privacy: "-1"
           proxy._: ""

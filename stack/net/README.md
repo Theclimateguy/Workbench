@@ -8,3 +8,6 @@ Install: copy both files to /etc/netplan/, `chmod 600`, `netplan apply`.
   default route (Wi-Fi). Activated automatically when `lan` fails = no DHCP server on the wire
   = direct cable to a workstation. IPv6 link-local stays on for `ff02::1` discovery.
 Wi-Fi profiles are site-specific and are NOT part of the image.
+- Route metrics: `lan` carries `ipv4/ipv6.route-metric 700`, above Wi-Fi's default 600, so when both are up
+  (office Wi-Fi + a laptop sharing internet over the cable) the GX10 keeps using Wi-Fi for internet and the
+  cable only for the link-local peer. `direct` is `shared` and never installs a default route.

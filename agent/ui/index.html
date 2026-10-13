@@ -158,7 +158,7 @@
 </div>
 <script>
 const $ = s => document.querySelector(s);
-let sid = location.hash.slice(1) || null, lastHTML = "", targetName = "";
+let sid = location.hash.slice(1) || null, lastHTML = "", targetName = "", busySince = null;
 const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 marked.use({ gfm: true, breaks: true });
 const fmt = s => { try { return marked.parse(esc(s)); } catch { return esc(s).replace(/\n/g, "<br>"); } };
@@ -254,6 +254,10 @@ function renderMessages(d) {
   }
   $("#busy").style.display = d.busy ? "" : "none";
   $("#abort").style.display = d.busy ? "" : "none";
+  // watchdog: a turn that has produced nothing visible for a long time is usually a runaway reasoning loop
+  if (d.busy) { if (!busySince) busySince = Date.now(); const mins = Math.floor((Date.now() - busySince) / 60000);
+    $("#busy").textContent = mins >= 3 ? `думает уже ${mins} мин — если ничего не появляется, нажмите Стоп и переформулируйте` : "думает…"; }
+  else busySince = null;
   $("#send").disabled = !sid;
 }
 
@@ -270,7 +274,7 @@ async function poll() {
   catch (e) { $("#log").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 function selectSession(id) {
-  sid = id; lastHTML = ""; stickBottom = true; $("#log").innerHTML = "";   // clean slate until the session's own messages arrive
+  sid = id; lastHTML = ""; stickBottom = true; busySince = null; $("#log").innerHTML = "";   // clean slate until the session's own messages arrive
   document.querySelectorAll(".sessions a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#"+id));
   showView("chat"); poll();
 }

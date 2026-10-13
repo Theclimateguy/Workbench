@@ -6,8 +6,8 @@
       "name": "Spark local vLLM",
       "options": { "baseURL": "http://127.0.0.1:8000/v1", "apiKey": "local" },
       "models": {
-        "fast": { "name": "Qwen3.6-35B-A3B NVFP4 (fast)", "limit": { "context": 131072, "output": 16384 } },
-        "deep": { "name": "Nemotron 3 Super 120B NVFP4 (deep)", "limit": { "context": 131072, "output": 16384 } }
+        "fast": { "name": "Qwen3.6-35B-A3B NVFP4 (fast)", "limit": { "context": 131072, "output": 8192 } },
+        "deep": { "name": "gpt-oss-120b MXFP4 (deep)", "limit": { "context": 131072, "output": 8192 } }
       }
     }
   },
