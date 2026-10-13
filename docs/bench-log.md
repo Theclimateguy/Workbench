@@ -1,4 +1,4 @@
-# Замеры на ASUS Ascent GX10 (GB10, 121 ГиБ)
+# Замеры на GB10 (ASUS Ascent GX10, NVIDIA DGX Spark FE; 121 ГиБ)
 
 Среда: DGX OS 7.5.0 + OTA 7.6.0, ядро 7.0.0-1019-nvidia, драйвер 580.178.04, Docker 29.6.2, toolkit 1.20.1.
 Скрипт: `tests/bench.py` (400 токенов на ответ, temperature 0, прогрев отброшен).
@@ -10,6 +10,7 @@
 | 2026-10-04 | fast | MTP + `--moe-backend marlin` | — | — | — | — | — | падает: marlin не поддержан для неквантованного MTP-драфта |
 | 2026-10-04 | deep | Nemotron-3-Super-120B-A12B-NVFP4 + MTPv2 draft (triton), vLLM 0.28, marlin, fp8 KV, ctx 131K, util 0.85, max-num-seqs 4 | 24.1 | 335 мс | 4 потока: 60.7 (15/поток) | 5.2K промпт: 19.9 → 22.3 tok/s | OK | веса 75.1 ГиБ, KV 23.7 ГиБ (2.98M токенов), старт 12 мин |
 | 2026-10-13 | fast | **NVIDIA DGX Spark FE** (spark-c590, DGX OS 7.2.3, ядро 7.0.0-1019, 580.178.04), та же конфигурация fast + MTP, параллельно шла загрузка gpt-oss на диск | 98.3 | 81 мс | 2 потока: 124–133 (62–66/поток) | 5.2K промпт: 64–70 → 61–72 tok/s | OK, content OK | веса 22.0 ГиБ, загрузка 149 с (диск занят загрузкой), первый прогон bootstrap |
+| 2026-10-14 | deep | **DGX Spark FE**, gpt-oss-120b MXFP4 (Marlin MoE), vLLM 0.28, flashinfer, ctx 131K, util 0.80, tiktoken-словарь из `/opt/models/gpt-oss-120b/tiktoken` | 35.6 | 198 мс | 2 потока: 62.5 (31/поток) | 5.3K промпт: 31.0 → 33.8 tok/s | OK, content OK (reasoning 334 симв.) | веса 66.1 ГиБ (476 с загрузки), KV 26.6 ГиБ, старт 546 с; после старта свободно 17 ГБ; первая попытка без кэша tiktoken — 500 `HarmonyError` (исправлено в db14e18) |
 | 2026-10-14 | deep | **NVIDIA DGX Spark FE**, openai/gpt-oss-120b MXFP4, vLLM 0.28, Marlin MoE, ctx 131K, util 0.80, tiktoken-словари в папке модели | 35.6 | 198 мс | 2 потока: 62.5 (31/поток) | 5.3K промпт: 31.0 → 33.8 tok/s | OK, content OK (Harmony parsed, reasoning 334 символа) | веса 66.1 ГиБ, KV 26.6 ГиБ, старт 546 с (весa 476 с), под ОС остаётся ~17 ГБ (у Nemotron было ~5) |
 
 ## Инцидент 2026-10-13: «deep завис»
