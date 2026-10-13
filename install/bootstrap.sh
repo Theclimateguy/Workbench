@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bootstrap.sh — turn a freshly installed GX10 (DGX OS, OOBE done, internet available) into a
+# bootstrap.sh — turn a freshly installed GB10 box (DGX Spark, ASUS GX10, …: DGX OS, OOBE done, internet) into a
 # Workbench field unit. Run as the operator user (default "admin") from a clone of this repo:
 #
 #   git clone https://github.com/Theclimateguy/Workbench.git ~/Workbench
@@ -33,7 +33,7 @@ phase() { # phase NAME -> returns 1 (skip) if done
 done_() { sudo touch "$MARK/$1.done"; }
 
 [ "$(id -u)" != 0 ] || die "run as the operator user (with sudo), not as root"
-sudo -v || die "sudo is required"
+sudo -n true 2>/dev/null || die "sudo without a password is required for the operator user (sudoers NOPASSWD, as DGX OOBE sets for its first user)"
 sudo install -d -m 755 "$MARK"
 
 # ---------------------------------------------------------------- 0. preflight
@@ -135,7 +135,7 @@ fi
 # ---------------------------------------------------------------- 8. operator conveniences
 if phase desktop; then
   support-ctl install-desktop || true
-  [ -f "$REPO/docs/manual/GX10-operator-manual.pdf" ] && { mkdir -p "$HOME/Desktop"; cp "$REPO/docs/manual/GX10-operator-manual.pdf" "$HOME/Desktop/"; }
+  [ -f "$REPO/docs/manual/operator-manual.pdf" ] && { mkdir -p "$HOME/Desktop"; cp "$REPO/docs/manual/operator-manual.pdf" "$HOME/Desktop/"; }
   support-ctl net hotspot auto on || warn "hotspot not configured (no Wi-Fi adapter?)"
   done_ desktop
 fi

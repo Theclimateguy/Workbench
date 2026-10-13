@@ -6,7 +6,7 @@
 #   support-ctl target list|test NAME
 #   support-ctl docs status|reload          token estimate for docs/; reload = restart the agent engine to pick up new docs
 #   support-ctl net status|peers|lan|direct RJ45 mode (auto: lan→direct fallback) and hosts on the direct link
-#   support-ctl net hotspot on|off|auto on|auto off   Wi-Fi access point GX10-Support; auto = start at boot when no known Wi-Fi is around
+#   support-ctl net hotspot on|off|auto on|auto off   Wi-Fi access point Workbench-Support; auto = start at boot when no known Wi-Fi is around
 #   support-ctl agent                       open the agent TUI (OpenCode) in the workspace
 #   support-ctl gui                         open the web UI in the default browser (desktop shortcut)
 #   support-ctl install-desktop             install the Spark Support icon + launcher for the current user
@@ -150,7 +150,7 @@ cmd_net() {
     lan|direct)
       sudo nmcli con up "$sub" >/dev/null && cmd_net status ;;
     hotspot)
-      local WIFI=$WIFI_IF SSID=${HOTSPOT_SSID:-GX10-Support}
+      local WIFI=$WIFI_IF SSID=${HOTSPOT_SSID:-Workbench-Support}
       [ -n "$WIFI" ] || die "no Wi-Fi interface found"
       case "${2:-on}" in
         on)

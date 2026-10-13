@@ -1,5 +1,5 @@
 # Pinned versions for the Workbench stack. bootstrap.sh and fetch-models.sh read this file.
-# Validated together on ASUS Ascent GX10, DGX OS 7.6.0 (driver 580.178.04, CUDA 13.0), 2026-10-04.
+# Validated together on ASUS Ascent GX10 (DGX OS 7.6.0) 2026-10-04 and NVIDIA DGX Spark FE (DGX OS 7.2.3, same kernel 7.0.0-1019 / driver 580.178.04) 2026-10-13.
 # Change a line here -> re-run `support-ctl update` (software) or `install/fetch-models.sh` (weights).
 
 # Host OS (informational; installed by the operator, see docs/DEPLOY.md)
