@@ -94,6 +94,7 @@ rsync -a /Volumes/SSD/models/ admin@10.77.0.1:/opt/models/            # пото
 |---|---|
 | preflight: `DGX OS … older than` | OTA-обновление (§2 п.2) или `FORCE_OLD_OS=1 ./install/bootstrap.sh` на свой риск |
 | `GPU not visible in container` | `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker`, повторить |
+| `deep` (gpt-oss) отвечает 500, в логе `HarmonyError: error downloading or loading vocab file` | в `/opt/models/gpt-oss-120b/tiktoken/` нет словарей tiktoken (старая загрузка) | `install/fetch-models.sh deep` (докачает только словари), `support-ctl model deep` |
 | `hf download` обрывается | повторить `bootstrap.sh` — докачает; при лимитах HF задать `HF_TOKEN=…` |
 | `llm@fast failed` | `journalctl -u llm@fast -n 100`; частое — не хватило памяти из-за page cache: `sudo systemctl restart llm@fast` (юнит сам сбрасывает кэш) |
 | vLLM не стартует на новой DGX OS | откатить образ: в `versions.lock` другая версия → `rm vllm-image.done` → `bootstrap.sh`; известные рабочие пары — `docs/bench-log.md` |

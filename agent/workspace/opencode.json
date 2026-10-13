@@ -4,20 +4,40 @@
     "spark": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Spark local vLLM",
-      "options": { "baseURL": "http://127.0.0.1:8000/v1", "apiKey": "local" },
+      "options": {
+        "baseURL": "http://127.0.0.1:8000/v1",
+        "apiKey": "local"
+      },
       "models": {
-        "fast": { "name": "Qwen3.6-35B-A3B NVFP4 (fast)", "limit": { "context": 131072, "output": 8192 } },
-        "deep": { "name": "gpt-oss-120b MXFP4 (deep)", "limit": { "context": 131072, "output": 8192 } }
+        "fast": {
+          "name": "Qwen3.6-35B-A3B NVFP4 (fast)",
+          "limit": {
+            "context": 131072,
+            "output": 8192
+          }
+        },
+        "deep": {
+          "name": "gpt-oss-120b MXFP4 (deep)",
+          "limit": {
+            "context": 131072,
+            "output": 8192
+          }
+        }
       }
     }
   },
   "model": "spark/fast",
   "small_model": "spark/fast",
-  "instructions": ["docs/**/*.md"],
+  "instructions": [
+    "docs/**/*.md"
+  ],
   "mcp": {
     "target-host": {
       "type": "local",
-      "command": ["/opt/support/venv/bin/python", "/opt/support/mcp/target_host.py"],
+      "command": [
+        "/opt/support/venv/bin/python",
+        "/opt/support/mcp/target_host.py"
+      ],
       "enabled": true,
       "environment": {
         "SUPPORT_TARGETS_DIR": "/opt/support/targets",
@@ -42,6 +62,13 @@
     "target-host_read_file": "allow",
     "target-host_run_change": "ask",
     "target-host_write_file": "ask",
-    "target-host_reboot_and_wait": "ask"
+    "target-host_reboot_and_wait": "ask",
+    "target-host_device_list": "allow",
+    "target-host_observe": "allow",
+    "target-host_scan": "allow",
+    "target-host_device_act": "ask",
+    "target-host_workbench_run": "ask",
+    "target-host_device_actuate": "ask",
+    "target-host_device_recover": "ask"
   }
 }

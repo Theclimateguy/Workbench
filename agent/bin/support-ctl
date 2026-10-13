@@ -2,8 +2,13 @@
 # support-ctl — operator CLI for the Spark support stack.
 #   support-ctl status                      stack health (LLM, targets, docs)
 #   support-ctl model fast|deep             switch the LLM profile (mutually exclusive)
-#   support-ctl target add NAME USER@HOST   register a workstation and install the agent key there
+#   support-ctl target add NAME USER@HOST   register a Linux host (ssh) and install the agent key there
 #   support-ctl target list|test NAME
+#   support-ctl device add NAME TYPE KEY=VAL...   register a non-ssh device: serial PORT= BAUD= | can IFACE= BITRATE= |
+#                                           modbus HOST= PORT= UNIT= (or PORT=/dev/tty.. BAUD=) | http URL= [AUTH=u:p]
+#   support-ctl device list|test NAME|rm NAME
+#   support-ctl scan [all|usb|serial|can|net|mdns]   what is physically around: USB, serial ports, CAN, hosts per link, mDNS
+#   support-ctl workbench build|status|runs   sandbox image for agent scripts (build needs internet once)
 #   support-ctl docs status|reload          token estimate for docs/; reload = restart the agent engine to pick up new docs
 #   support-ctl net status|peers|lan|direct RJ45 mode (auto: lan→direct fallback) and hosts on the direct link
 #   support-ctl net hotspot on|off|auto on|auto off   Wi-Fi access point Workbench-Support; auto = start at boot when no known Wi-Fi is around
@@ -50,7 +55,8 @@ cmd_status() {
   echo "== Web UI (login: support)"
   for a in $(hostname -I); do echo "  http://$a:8080"; done
   echo "  http://$(hostname).local:8080  (mDNS, с ноутбука в той же сети/хотспоте)"
-  echo "== Targets"; cmd_target list
+  echo "== Devices"; cmd_device list
+  echo "== Workbench"; cmd_workbench status
   echo "== Docs"; cmd_docs status
   echo "== Audit: $([ -f /var/log/support/audit.jsonl ] && wc -l < /var/log/support/audit.jsonl || echo 0) entries"
 }
@@ -113,6 +119,126 @@ cmd_target() {
         ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o HostKeyAlias="$name" -o ConnectTimeout=10 -i "${KEY:-$KEY}" -p "${PORT:-22}" "${USER:-support-agent}@$rhost" \
           "echo \"  ok: \$(hostname) \$(uname -r)\"; sudo -n true && echo \"  sudo: ok\" || echo \"  sudo: MISSING\"" ) ;;
     *) die "usage: support-ctl target list|add|test" ;;
+  esac
+}
+
+cmd_device() {
+  local sub=${1:-list}; shift || true
+  mkdir -p "$TARGETS"
+  case "$sub" in
+    list)
+      ls "$TARGETS"/*.env >/dev/null 2>&1 || { echo "  (none)"; return; }
+      for f in "$TARGETS"/*.env; do
+        # shellcheck disable=SC1090
+        ( unset TYPE HOST PORT USER MDNS MAC IP_LAST BAUD IFACE BITRATE UNIT URL; . "$f"
+          case "${TYPE:-ssh}" in
+            serial) printf '  %-10s serial   %s @ %s\n' "$(basename "$f" .env)" "${PORT:-/dev/ttyUSB0}" "${BAUD:-115200}" ;;
+            can)    printf '  %-10s can      %s @ %s\n' "$(basename "$f" .env)" "${IFACE:-can0}" "${BITRATE:-500000}" ;;
+            modbus) case "${PORT:-502}" in /dev/*) printf '  %-10s modbus   rtu %s @ %s unit %s\n' "$(basename "$f" .env)" "$PORT" "${BAUD:-9600}" "${UNIT:-1}" ;;
+                                           *) printf '  %-10s modbus   tcp %s:%s unit %s\n' "$(basename "$f" .env)" "$HOST" "${PORT:-502}" "${UNIT:-1}" ;; esac ;;
+            http)   printf '  %-10s http     %s\n' "$(basename "$f" .env)" "$URL" ;;
+            *)      printf '  %-10s ssh      %s@%s:%s  (mdns: %s, mac: %s, last: %s)\n' "$(basename "$f" .env)" "${USER:-support-agent}" "${HOST:-auto}" "${PORT:-22}" "${MDNS:-—}" "${MAC:-—}" "${IP_LAST:-—}" ;;
+          esac )
+      done ;;
+    add)
+      local name=${1:-} type=${2:-}; shift 2 || true
+      [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || die "usage: support-ctl device add NAME TYPE KEY=VAL...   (TYPE: ssh|serial|can|modbus|http)"
+      case "$type" in
+        ssh) [ -n "${1:-}" ] || die "ssh devices: support-ctl target add NAME USER@HOST"; cmd_target add "$name" "$1"; return ;;
+        serial|can|modbus|http) ;;
+        *) die "TYPE must be ssh|serial|can|modbus|http" ;;
+      esac
+      { echo "TYPE=$type"; for kv in "$@"; do [[ "$kv" =~ ^[A-Z_]+=.+$ ]] || die "expected KEY=VALUE, got '$kv'"; echo "$kv"; done; } > "$TARGETS/$name.env"
+      echo "saved $TARGETS/$name.env"; cmd_device test "$name" ;;
+    rm)
+      local name=${1:-}; [ -f "$TARGETS/$name.env" ] || die "no such device: $name"
+      rm -f "${TARGETS:?}/${name:?}.env"; echo "removed $name" ;;
+    test)
+      local name=${1:-ws}; [ -f "$TARGETS/$name.env" ] || die "no such device: $name"
+      local type
+      # shellcheck disable=SC1090
+      type=$( unset TYPE; . "$TARGETS/$name.env"; echo "${TYPE:-ssh}" )
+      [ "$type" = ssh ] && { cmd_target test "$name"; return; }
+      SUPPORT_TARGETS_DIR=$TARGETS SUPPORT_MCP_DIR=$SUPPORT_DIR/mcp "$SUPPORT_DIR/venv/bin/python" - "$name" <<'PY'
+import sys, os
+sys.path.insert(0, os.environ["SUPPORT_MCP_DIR"])
+import connectors
+from pathlib import Path
+name = sys.argv[1]
+cfg = connectors.load_env(Path(os.environ["SUPPORT_TARGETS_DIR"]) / f"{name}.env")
+print("  " + connectors.describe(cfg))
+c = connectors.make(cfg)
+q = {"serial": "", "can": "dump", "modbus": "holding 0 2", "http": "HEAD /"}[cfg["TYPE"].lower()]
+try:
+    out = c.observe(q, 2)
+    print("  ok:", (out.strip().splitlines() or ["(empty)"])[0][:100])
+except Exception as e:
+    print("  FAIL:", e); sys.exit(1)
+PY
+      ;;
+    *) die "usage: support-ctl device list|add|test|rm" ;;
+  esac
+}
+
+cmd_scan() {
+  local what=${1:-all}
+  section() { [ "$what" = all ] || [ "$what" = "$1" ]; }
+  if section usb; then
+    echo "== USB"
+    lsusb 2>/dev/null | grep -v 'Linux Foundation .* root hub' | sed 's/^/  /' || true
+  fi
+  if section serial; then
+    echo "== Serial ports"
+    local found=0
+    for d in /dev/serial/by-id/*; do [ -e "$d" ] && { printf '  %s -> %s\n' "$(basename "$d")" "$(readlink -f "$d")"; found=1; }; done
+    for d in /dev/ttyUSB* /dev/ttyACM*; do [ -e "$d" ] && [ ! -e /dev/serial/by-id ] && { echo "  $d"; found=1; }; done
+    [ "$found" = 1 ] || echo "  (none: no USB-serial adapter plugged in)"
+  fi
+  if section can; then
+    echo "== CAN interfaces"
+    ip -d -br link 2>/dev/null | awk '$1 ~ /can/ {print "  " $0}' | grep . || echo "  (none: plug a USB-CAN adapter; support-priv can-restart IFACE BITRATE brings it up)"
+  fi
+  if section net; then
+    echo "== Network links"
+    ip -br addr | awk '$1!="lo" && $1!~/^(docker|veth|br-)/ {print "  " $0}'
+    for ifc in $(ip -br link | awk '$1!="lo" && $1!~/^(docker|veth|br-|can|vcan)/ && $2=="UP"{print $1}'); do
+      local net; net=$(ip -4 -o addr show "$ifc" | awk '{print $4}' | head -1); [ -n "$net" ] || continue
+      local pfx=${net#*/}; [ "$pfx" -ge 22 ] 2>/dev/null || { echo "== Hosts on $ifc ($net): prefix too wide to sweep"; continue; }
+      echo "== Hosts on $ifc ($net)"
+      if sudo -n "$SUPPORT_DIR/bin/support-priv" arp-scan "$ifc" 2>/dev/null | awk '{printf "  %-16s %-18s %s\n", $1, $2, substr($0, index($0,$3))}' | grep .; then :; else
+        nmap -sn -T4 --max-retries 1 "$net" 2>/dev/null | awk '/Nmap scan report/{h=$5; ip=$6; gsub(/[()]/,"",ip); if(ip=="") ip=h; print "  " ip "  " (h==ip?"":h)}' | grep . || echo "  (nobody answered)"
+      fi
+      local leases=/var/lib/NetworkManager/dnsmasq-$ifc.leases
+      sudo -n test -s "$leases" 2>/dev/null && { echo "  DHCP leases handed out on $ifc:"; sudo -n cat "$leases" | awk '{print "    " $3 "  " $2 "  " $4}'; }
+    done
+  fi
+  if section mdns; then
+    echo "== mDNS services (4 s)"
+    timeout 5 avahi-browse -atrp 2>/dev/null | awk -F';' '$1=="="{printf "  %-28s %-16s %s %s\n", $4, $8, $5, $7}' | sort -u | grep . || echo "  (none announced)"
+  fi
+}
+
+cmd_workbench() {
+  local sub=${1:-status} repo; repo=$(cat /etc/support/workbench.path 2>/dev/null || echo "$SUPPORT_DIR/..")
+  local img; img=$(sed -n 's/^WORKBENCH_IMAGE=//p' "$repo/install/versions.lock" 2>/dev/null); img=${img:-workbench:local}
+  case "$sub" in
+    build)
+      [ -f "$repo/stack/workbench/Dockerfile" ] || die "no Dockerfile at $repo/stack/workbench"
+      echo "building $img (python + pyserial/python-can/pymodbus/scapy/esptool; needs internet) ..."
+      docker build -q -t "$img" "$repo/stack/workbench" >/dev/null
+      echo "  built $img ($(docker image inspect "$img" --format '{{.Size}}' | awk '{printf "%.0f MiB", $1/1048576}'))"
+      docker network inspect workbench >/dev/null 2>&1 || docker network create --subnet 172.31.77.0/24 workbench >/dev/null
+      mkdir -p "$SUPPORT_DIR/workbench/runs"
+      docker run --rm "$img" python3 -c "import serial, can, pymodbus, scapy, esptool, paramiko; print('  sandbox libs ok')" ;;
+    status)
+      if docker image inspect "$img" >/dev/null 2>&1; then
+        echo "  image $img: $(docker image inspect "$img" --format '{{.Created}}' | cut -c1-19)  ($(docker image inspect "$img" --format '{{.Size}}' | awk '{printf "%.0f MiB", $1/1048576}'))"
+      else echo "  image $img: NOT BUILT — support-ctl workbench build"; fi
+      echo "  network: $(docker network inspect workbench --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || echo "not created")"
+      echo "  runs: $(ls "$SUPPORT_DIR/workbench/runs" 2>/dev/null | wc -l | tr -d ' ') in $SUPPORT_DIR/workbench/runs" ;;
+    runs)
+      for d in "$SUPPORT_DIR"/workbench/runs/*/; do [ -d "$d" ] && printf '  %s  %s\n' "$(basename "$d")" "$(head -c 80 "$d"/script.* 2>/dev/null | tr '\n' ' ')"; done ;;
+    *) die "usage: support-ctl workbench build|status|runs" ;;
   esac
 }
 
@@ -267,6 +393,9 @@ case "${1:-}" in
   status) cmd_status ;;
   model)  shift; cmd_model "$@" ;;
   target) shift; cmd_target "$@" ;;
+  device) shift; cmd_device "$@" ;;
+  scan)   shift; cmd_scan "$@" ;;
+  workbench) shift; cmd_workbench "$@" ;;
   docs)   shift; cmd_docs "$@" ;;
   net)    shift; cmd_net "$@" ;;
   agent)  shift; cmd_agent "$@" ;;
@@ -276,5 +405,5 @@ case "${1:-}" in
   install-desktop) cmd_install_desktop ;;
   update) cmd_update ;;
   version) cmd_version ;;
-  *) sed -n '2,10p' "$0"; exit 1 ;;
+  *) sed -n '2,20p' "$0"; exit 1 ;;
 esac

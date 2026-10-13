@@ -29,9 +29,20 @@ fetch() {  # fetch "repo|rev|dir|GiB"
   echo "  $dir: done ($(du -sh "$dest" | cut -f1))"
 }
 
+fetch_tiktoken() {  # gpt-oss (Harmony) needs the tiktoken vocab files at runtime; vLLM in the field has no internet.
+  IFS='|' read -r _ _ dir _ <<<"$MODEL_DEEP"
+  local d="$MODELS_DIR/$dir/tiktoken"; mkdir -p "$d"
+  for n in o200k_base cl100k_base; do
+    local u="https://openaipublic.blob.core.windows.net/encodings/$n.tiktoken"
+    local h; h=$(printf '%s' "$u" | sha1sum | cut -d' ' -f1)       # tiktoken-rs cache key = sha1(url)
+    [ -s "$d/$h" ] || curl -fsSL -o "$d/$h" "$u"
+    echo "  tiktoken $n -> $d/$h"
+  done
+}
+
 case "$want" in
   fast) fetch "$MODEL_FAST" ;;
-  deep) fetch "$MODEL_DEEP"; [ -n "${MODEL_DEEP_DRAFT:-}" ] && fetch "$MODEL_DEEP_DRAFT" ;;
-  all)  fetch "$MODEL_FAST"; fetch "$MODEL_DEEP"; [ -n "${MODEL_DEEP_DRAFT:-}" ] && fetch "$MODEL_DEEP_DRAFT" ;;
+  deep) fetch "$MODEL_DEEP"; fetch_tiktoken; [ -n "${MODEL_DEEP_DRAFT:-}" ] && fetch "$MODEL_DEEP_DRAFT" ;;
+  all)  fetch "$MODEL_FAST"; fetch "$MODEL_DEEP"; fetch_tiktoken; [ -n "${MODEL_DEEP_DRAFT:-}" ] && fetch "$MODEL_DEEP_DRAFT" ;;
   *) echo "usage: $0 fast|deep|all" >&2; exit 1 ;;
 esac

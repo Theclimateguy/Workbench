@@ -91,6 +91,11 @@
   .perm .title { font-weight:600; font-size:14px } .perm .why { color:var(--muted) }
   .perm pre { font-family:"SF Mono", Menlo, Consolas, monospace; font-size:12px; background:var(--bg); border-radius:8px; padding:8px 10px; margin:0; white-space:pre-wrap; max-height:260px; overflow:auto; line-height:1.5 }
   .perm .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:2px }
+  .perm { border-left:4px solid var(--warn) } .perm.actuation { border-left-color:var(--bad) } .perm.actuation .title { color:var(--bad) }
+  .perm .cls { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted) } .perm.actuation .cls { color:var(--bad); font-weight:600 }
+  .perm .rb { font-size:13px } .perm .rb b { font-weight:600 }
+  .perm.actuation button.primary { background:var(--bad); border-color:var(--bad) }
+  details.tool.actuation summary b { color:var(--bad) } details.tool.config summary b { color:#B25E00 }
   #toBottom { position:absolute; right:28px; bottom:84px; z-index:2; border-radius:999px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,.2) }
   form { padding:12px 28px 16px; display:flex; gap:10px; align-items:flex-end; border-top:1px solid var(--line2); background:var(--bar) }
   form textarea { flex:1; font:inherit; font-size:14px; min-height:40px; max-height:200px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--panel); color:var(--ink); resize:vertical }
@@ -188,29 +193,42 @@ async function refreshState() {
     llm.querySelector(".l").textContent = s.llm.up ? (s.profiles.fast === "active" ? "Qwen3.6 35B" : "gpt-oss 120B") : (s.profiles.fast === "activating" || s.profiles.deep === "activating" || switching) ? "модель загружается…" : "LLM offline";
     const t = $("#targetChip"); targetName = s.targets[0]?.name || "";
     t.querySelector(".dot").className = "dot " + (s.targets.length ? "ok" : "warn");
-    t.querySelector(".l").textContent = s.targets.length ? s.targets.map(x => x.name).join(", ") : "нет целей";
+    t.querySelector(".l").textContent = s.targets.length ? s.targets.map(x => x.name + (x.type && x.type !== "ssh" ? ":" + x.type : "")).join(", ") : "нет устройств";
     $("#sessions").innerHTML = s.sessions.map(x => `<a href="#${x.id}" class="${x.id===sid?"active":""}"><div class="t">${esc(x.title || x.id)}</div><div class="s">${x.updated ? new Date(x.updated).toLocaleString("ru", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"}) : ""}</div></a>`).join("");
-    $("#foot").innerHTML = (s.targets.length ? s.targets.map(x => `<div><b>${esc(x.name)}</b> · ${esc(x.user)}@${esc(x.host)}</div>`).join("") : `<div>Цель не задана: <span class="mono">support-ctl target add ws user@host</span></div>`)
+    $("#foot").innerHTML = (s.targets.length ? s.targets.map(x => `<div><b>${esc(x.name)}</b> · ${esc(x.type || "ssh")} · ${esc(x.where || x.user + "@" + x.host)}</div>`).join("") : `<div>Устройства не заданы: <span class="mono">support-ctl target add ws user@host</span> / <span class="mono">support-ctl device add …</span></div>`)
       + `<div>Документация: ${s.docs.files} файлов, ~${s.docs.tokens_est.toLocaleString("ru")} токенов</div>`;
     if (!sid && s.sessions.length) location.hash = s.sessions[0].id;
   } catch (e) { $("#llmChip .l").textContent = /503/.test(e.message) ? "агент недоступен" : "ошибка: " + e.message.slice(0, 40); $("#llmChip .dot").className = "dot bad"; }
 }
 
 // ---------- chat rendering ----------
+const CLASS = { actuation: ["device_actuate","device_recover","reboot_and_wait"], config: ["run_change","write_file","device_act","workbench_run"] };
+const toolClass = t => CLASS.actuation.includes(t) ? "actuation" : CLASS.config.includes(t) ? "config" : "read";
+const WHAT = { run_change: "выполнить команду", write_file: "изменить файл", reboot_and_wait: "перезагрузить", device_act: "изменить настройку",
+               device_actuate: "воздействовать на оборудование", device_recover: "сбросить / перезапустить", workbench_run: "запустить свой скрипт в песочнице" };
 function renderPerm(p, calls) {
   const call = calls[p.tool?.callID] || {};
   const i = Object.keys(p.metadata?.input || {}).length ? p.metadata.input : (call.input || p.metadata || {});
-  const tool = (call.tool || p.metadata?.tool || p.permission || "").replace(/^target-host_/, "");
-  const what = {run_change: "выполнить команду", write_file: "изменить файл", reboot_and_wait: "перезагрузить"}[tool] || tool;
-  const body = i.cmd ? i.cmd : i.path ? `${i.path}\n${i.content !== undefined ? "--- содержимое ---\n" + i.content : ""}` : JSON.stringify(i, null, 1);
-  return `<div class="perm" data-pid="${p.id}">${ICON.warn}<div class="body2">
-    <div class="title">Агент хочет ${esc(what)} на ${esc(i.target || targetName || "цели")}</div>
+  const tool = (call.tool || p.metadata?.tool || p.tool?.name || p.permission || "").replace(/^target-host_/, "");
+  const cls = toolClass(tool), what = WHAT[tool] || tool;
+  const where = i.device || i.target || (tool === "workbench_run" ? "Workbench (песочница)" : targetName || "цели");
+  let body;
+  if (tool === "workbench_run") body = `# ${i.language || "python"} · сеть: ${i.network || "none"}${i.devices ? " · устройства: " + i.devices : ""}${i.usb ? " · USB" : ""}\n${i.script || ""}`;
+  else if (i.cmd) body = i.cmd;
+  else if (i.action !== undefined) body = i.action;
+  else if (i.path) body = `${i.path}\n${i.content !== undefined ? "--- содержимое ---\n" + i.content : ""}`;
+  else body = JSON.stringify(i, null, 1);
+  const clsLabel = cls === "actuation" ? "Актуация — одобряется каждый раз" : cls === "config" ? "Изменение" : "";
+  return `<div class="perm ${cls}" data-pid="${p.id}" data-cls="${cls}">${ICON.warn}<div class="body2">
+    ${clsLabel ? `<div class="cls">${clsLabel}</div>` : ""}
+    <div class="title">Агент хочет ${esc(what)} · ${esc(where)}</div>
     ${i.reason ? `<div class="why">Причина: ${esc(i.reason)}</div>` : ""}
     <pre>${esc(body)}</pre>
+    ${i.rollback ? `<div class="rb"><b>Откат:</b> ${esc(i.rollback)}</div>` : cls === "actuation" ? `<div class="rb err">План отката не указан</div>` : ""}
     <div class="actions">
       <button type="button" data-resp="reject">Отклонить</button>
-      <button type="button" data-resp="always">Разрешить всегда</button>
-      <button type="button" class="primary" data-resp="once">Разрешить</button>
+      ${cls === "actuation" ? "" : `<button type="button" data-resp="always">Разрешить всегда</button>`}
+      <button type="button" class="primary" data-resp="once">${cls === "actuation" ? "Разрешить этот раз" : "Разрешить"}</button>
     </div></div></div>`;
 }
 const ICON_Q = '<svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="#0A84FF"/><path d="M13.5 14.5a4.5 4.5 0 1 1 6.3 4.1c-1.2.6-1.8 1.3-1.8 2.6" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round"/><circle cx="18" cy="25.5" r="1.6" fill="#fff"/></svg>';
@@ -240,8 +258,9 @@ function renderMessages(d) {
         const icon = p.status === "completed" ? ICON.ok : p.status === "error" ? ICON.err : ICON.run;
         const dur = p.time?.start && p.time?.end ? ` · ${((p.time.end - p.time.start)/1000).toFixed(1)} с` : "";
         const name = (p.tool || "").replace(/^target-host_/, "");
-        const brief = p.input?.cmd || p.input?.path || "";
-        return `<details class="tool"><summary>${icon}<span><b>${esc(name)}</b>${p.input?.target ? " · " + esc(p.input.target) : ""}${dur}${brief ? ` · <span class="mono">${esc(brief).slice(0, 90)}</span>` : ""}</span></summary><pre>${esc(p.output || "(нет вывода)")}</pre></details>`;
+        const brief = p.input?.cmd || p.input?.path || p.input?.action || p.input?.query || (p.input?.script ? (p.input.language || "python") + ": " + p.input.script.split("\n")[0] : "") || p.input?.what || "";
+        const dev = p.input?.device || p.input?.target;
+        return `<details class="tool ${toolClass(name)}"><summary>${icon}<span><b>${esc(name)}</b>${dev ? " · " + esc(dev) : ""}${dur}${brief ? ` · <span class="mono">${esc(brief).slice(0, 90)}</span>` : ""}</span></summary><pre>${esc(p.output || "(нет вывода)")}</pre></details>`;
       }
       return "";
     }).join("");
@@ -348,7 +367,9 @@ $("#log").addEventListener("click", async e => {
   }
   const b = e.target.closest("button[data-resp]"); if (!b) return;
   const pid = b.closest(".perm").dataset.pid; b.closest(".actions").querySelectorAll("button").forEach(x => x.disabled = true);
-  await api(`/api/session/${sid}/permission/${pid}`, {method:"POST", body: JSON.stringify({response: b.dataset.resp})}); poll();
+  try { await api(`/api/session/${sid}/permission/${pid}`, {method:"POST", body: JSON.stringify({response: b.dataset.resp})}); }
+  catch (err) { alert(/409/.test(err.message) ? "Актуация одобряется каждый раз отдельно — нажмите «Разрешить этот раз»." : "Не удалось ответить: " + err.message); b.closest(".actions").querySelectorAll("button").forEach(x => x.disabled = false); }
+  poll();
 });
 
 refreshState(); if (sid) selectSession(sid);

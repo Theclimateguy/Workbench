@@ -23,6 +23,7 @@ rsync -a --delete \
   "$REPO/agent/" "$SUPPORT_DIR/"
 rsync -a "$REPO/agent/workspace/docs/" "$SUPPORT_DIR/workspace/docs/" --ignore-existing
 rsync -a "$REPO/tests/" "$SUPPORT_DIR/tests/"
+mkdir -p "$SUPPORT_DIR/workbench/runs"
 rsync -a --delete "$REPO/stack/" "$STACK_DIR/"
 chmod +x "$SUPPORT_DIR"/bin/*
 sudo ln -sf "$SUPPORT_DIR/bin/support-ctl" /usr/local/bin/support-ctl
@@ -34,8 +35,8 @@ for u in llm@.service support-opencode.service support-ui.service support-ui-tls
 done
 sudo systemctl daemon-reload
 
-log "sudo rule: the web UI may switch LLM profiles"
-printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl start llm@fast, /usr/bin/systemctl start llm@deep, /usr/bin/systemctl stop llm@fast, /usr/bin/systemctl stop llm@deep, /usr/bin/systemctl restart llm@fast, /usr/bin/systemctl restart llm@deep\n' "$RUN_USER" \
+log "sudo rules: the web UI may switch LLM profiles; the agent stack may run support-priv (sandbox network, CAN restart, arp-scan)"
+printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl start llm@fast, /usr/bin/systemctl start llm@deep, /usr/bin/systemctl stop llm@fast, /usr/bin/systemctl stop llm@deep, /usr/bin/systemctl restart llm@fast, /usr/bin/systemctl restart llm@deep\n%s ALL=(root) NOPASSWD: %s/bin/support-priv\n' "$RUN_USER" "$RUN_USER" "$SUPPORT_DIR" \
   | sudo tee /etc/sudoers.d/90-support-ui >/dev/null && sudo chmod 440 /etc/sudoers.d/90-support-ui
 sudo visudo -cf /etc/sudoers.d/90-support-ui >/dev/null || { sudo rm -f /etc/sudoers.d/90-support-ui; log "  sudoers rule rejected, removed"; }
 
@@ -63,6 +64,10 @@ if [ -d "$SUPPORT_DIR/venv" ]; then
   log "python deps"
   "$SUPPORT_DIR/venv/bin/pip" install -q -r "$REPO/install/requirements.txt" 2>/dev/null \
     || log "  pip could not update deps (offline?) — keeping the installed versions"
+fi
+
+if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
+  docker network inspect workbench >/dev/null 2>&1 || docker network create --subnet 172.31.77.0/24 workbench >/dev/null 2>&1 || true
 fi
 
 log "restarting agent services (if installed)"

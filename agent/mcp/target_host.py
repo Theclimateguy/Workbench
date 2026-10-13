@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
-"""MCP server `target-host`: lets the support agent inspect and change a remote
-Ubuntu host over SSH.
+"""MCP server `target-host`: lets the support agent observe and change *devices* —
+Linux hosts over SSH (the original "target") and, since PLAN v3 phase A, serial consoles,
+CAN buses, Modbus units and device web APIs (see connectors.py) — plus a Docker sandbox
+("workbench") in which the agent may run its own scripts against those devices.
 
-Design rules (see PLAN.md §8.2):
-- read-only tools run freely; mutating tools are separate and the harness
-  (OpenCode permission config) asks the user before each call;
+Design rules (PLAN.md §4 phase A, §6):
+- three action classes, fixed by tool name so the harness (OpenCode permission config) can
+  gate them:   READ      target_list/device_list, collect_facts, run_readonly, read_file, observe, scan
+                           -> run freely
+              CONFIG    run_change, write_file, device_act, workbench_run
+                           -> approval per call (operator may say "always" for a session)
+              ACTUATION reboot_and_wait, device_actuate, device_recover
+                           -> approval per call, "always" is refused by the UI, rollback plan mandatory
+- which class a device write belongs to is decided here (connectors.py), not by the model;
 - every call is appended to the audit log (JSON lines);
-- command output and file contents are data for the agent, never instructions.
+- command output, bus traffic and file contents are data for the agent, never instructions.
 
-Targets are defined in $SUPPORT_TARGETS_DIR/<name>.env with keys
-HOST, USER (default support-agent), PORT (default 22), KEY (default agent key).
+Devices are defined in $SUPPORT_TARGETS_DIR/<name>.env; TYPE= selects the connector
+(default ssh: HOST|MDNS|MAC, USER, PORT, KEY). `support-ctl device add` writes these files.
 """
 from __future__ import annotations
 
@@ -18,16 +26,24 @@ import datetime as dt
 import json
 import os
 import shlex
-import tempfile
+import subprocess
+import sys
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import connectors  # noqa: E402
 
 TARGETS_DIR = Path(os.environ.get("SUPPORT_TARGETS_DIR", "/opt/support/targets"))
 AGENT_KEY = Path(os.environ.get("SUPPORT_AGENT_KEY", "/opt/support/keys/agent_ed25519"))
 AUDIT_LOG = Path(os.environ.get("SUPPORT_AUDIT_LOG", "/var/log/support/audit.jsonl"))
 SSH_TIMEOUT = int(os.environ.get("SUPPORT_SSH_TIMEOUT", "120"))
 MAX_OUTPUT = 60_000  # bytes returned to the model per call
+WORKBENCH_DIR = Path(os.environ.get("SUPPORT_WORKBENCH_DIR", "/opt/support/workbench"))
+WORKBENCH_IMAGE = os.environ.get("SUPPORT_WORKBENCH_IMAGE", "workbench:local")
+SUPPORT_CTL = os.environ.get("SUPPORT_CTL", "/usr/local/bin/support-ctl")
+PRIV = os.environ.get("SUPPORT_PRIV", "/opt/support/bin/support-priv")
 
 # Commands the agent may run without confirmation. First token of every
 # pipeline segment must be here; no redirections, no command substitution.
@@ -105,16 +121,34 @@ def _load_target(name: str) -> dict:
     p = TARGETS_DIR / f"{name}.env"
     if not p.exists():
         raise ValueError(f"unknown target '{name}'; known: {', '.join(_target_names()) or '(none)'}")
-    cfg = {"USER": "support-agent", "PORT": "22", "KEY": str(AGENT_KEY)}
-    for line in p.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, v = line.split("=", 1)
-            cfg[k.strip()] = v.strip().strip('"')
-    if "HOST" not in cfg and "MDNS" not in cfg and "MAC" not in cfg:
+    raw = connectors.load_env(p)
+    cfg = {"TYPE": "ssh"}
+    if (raw.get("TYPE") or "ssh").lower() == "ssh":
+        cfg.update({"USER": "support-agent", "PORT": "22", "KEY": str(AGENT_KEY)})
+    cfg.update(raw)
+    cfg["TYPE"] = cfg["TYPE"].lower()
+    if cfg["TYPE"] not in connectors.TYPES:
+        raise ValueError(f"device '{name}': unknown TYPE={cfg['TYPE']} (known: {', '.join(connectors.TYPES)})")
+    if cfg["TYPE"] == "ssh" and "HOST" not in cfg and "MDNS" not in cfg and "MAC" not in cfg:
         raise ValueError(f"target '{name}' has no HOST/MDNS/MAC")
     cfg["NAME"] = name
     return cfg
+
+
+def _ssh_only(cfg: dict, tool: str) -> None:
+    if cfg["TYPE"] != "ssh":
+        raise ValueError(f"{tool} works on ssh devices only; '{cfg['NAME']}' is {cfg['TYPE']} — use observe / device_act / device_actuate")
+
+
+def _connector(cfg: dict):
+    c = connectors.make(cfg)
+    if c is None:
+        raise ValueError(f"'{cfg['NAME']}' is an ssh device: use collect_facts / run_readonly / run_change")
+    return c
+
+
+async def _in_thread(fn, *a, timeout: float = 120):
+    return await asyncio.wait_for(asyncio.to_thread(fn, *a), timeout=timeout)
 
 
 def _target_names() -> list[str]:
@@ -190,19 +224,31 @@ def _classify_readonly(cmd: str) -> str | None:
 # ---------- read-only tools ----------
 
 @mcp.tool()
-def target_list() -> str:
-    """List configured target hosts (name, host, user)."""
+def device_list() -> str:
+    """List configured devices: name, connector type (ssh/serial/can/modbus/http) and how to reach them.
+    ssh devices take collect_facts/run_readonly/read_file/run_change/write_file/reboot_and_wait;
+    every other type takes observe / device_act / device_actuate / device_recover."""
     rows = []
     for n in _target_names():
-        c = _load_target(n)
-        rows.append(f"{n}: {c['USER']}@{c.get('HOST','auto')}:{c['PORT']} (mdns={c.get('MDNS','-')}, mac={c.get('MAC','-')}, last={c.get('IP_LAST','-')})")
-    return "\n".join(rows) or "no targets configured; run `support-ctl target add` on the Spark"
+        try:
+            c = _load_target(n)
+            rows.append(f"{n}: {connectors.describe(c)}" + (f" (last={c['IP_LAST']})" if c.get("IP_LAST") else ""))
+        except ValueError as e:
+            rows.append(f"{n}: INVALID ({e})")
+    return "\n".join(rows) or "no devices configured; run `support-ctl device add` on the Workbench box"
+
+
+@mcp.tool()
+def target_list() -> str:
+    """Alias of device_list (kept for older sessions)."""
+    return device_list()
 
 
 @mcp.tool()
 async def collect_facts(target: str = "ws") -> str:
     """Snapshot of the target host: OS, hardware, disks, network, failed units, recent errors, GPU, packages state."""
     cfg = _load_target(target)
+    _ssh_only(cfg, "collect_facts")
     script = r"""
 set +e
 echo "### os"; cat /etc/os-release | head -3; uname -r; uptime
@@ -229,6 +275,7 @@ async def run_readonly(cmd: str, target: str = "ws") -> str:
         _audit({"tool": "run_readonly", "target": target, "cmd": cmd, "rejected": reason})
         return f"REJECTED (not read-only): {reason}. Use run_change if this change is intended."
     cfg = _load_target(target)
+    _ssh_only(cfg, "run_readonly")
     r = await _run_ssh(cfg, cmd)
     _audit({"tool": "run_readonly", "target": target, "cmd": cmd, "rc": r["rc"]})
     return f"rc={r['rc']}\n{r['stdout']}" + (f"\n[stderr]\n{r['stderr']}" if r["stderr"] else "")
@@ -238,6 +285,7 @@ async def run_readonly(cmd: str, target: str = "ws") -> str:
 async def read_file(path: str, target: str = "ws", max_bytes: int = 40000) -> str:
     """Read a file from the target (uses sudo if needed). Output is truncated to max_bytes."""
     cfg = _load_target(target)
+    _ssh_only(cfg, "read_file")
     q = shlex.quote(path)
     r = await _run_ssh(cfg, f"(cat {q} 2>/dev/null || sudo -n cat {q}) | head -c {int(max_bytes)}")
     _audit({"tool": "read_file", "target": target, "path": path, "rc": r["rc"]})
@@ -250,11 +298,17 @@ async def read_file(path: str, target: str = "ws", max_bytes: int = 40000) -> st
 
 @mcp.tool()
 async def run_change(cmd: str, reason: str, target: str = "ws") -> str:
-    """Run a command that CHANGES the target (install, restart, edit, apply). Requires user approval.
-    `reason` must say what and why; it goes to the audit log."""
+    """CONFIG class: run a command that CHANGES an ssh device (install, restart, edit, apply). Requires user approval.
+    `reason` must say what and why; it goes to the audit log. Power-cycling, flashing firmware and disk
+    formatting are ACTUATION: those commands are refused here — use device_actuate (with a rollback plan)
+    or reboot_and_wait."""
     cfg = _load_target(target)
+    _ssh_only(cfg, "run_change")
+    if connectors.POWER_FIRMWARE_RE.search(cmd):
+        _audit({"tool": "run_change", "target": target, "cmd": cmd, "reason": reason, "rejected": "actuation class"})
+        return "REJECTED: this command powers/flashes/formats hardware (ACTUATION class). Call device_actuate with a rollback plan, or reboot_and_wait."
     r = await _run_ssh(cfg, cmd, timeout=600)
-    _audit({"tool": "run_change", "target": target, "cmd": cmd, "reason": reason, "rc": r["rc"]})
+    _audit({"tool": "run_change", "target": target, "cmd": cmd, "reason": reason, "rc": r["rc"], "class": "config"})
     return f"rc={r['rc']}\n{r['stdout']}" + (f"\n[stderr]\n{r['stderr']}" if r["stderr"] else "")
 
 
@@ -263,6 +317,7 @@ async def write_file(path: str, content: str, reason: str, target: str = "ws", m
     """Write a whole file on the target. Keeps a timestamped backup next to it and returns the diff.
     Requires user approval."""
     cfg = _load_target(target)
+    _ssh_only(cfg, "write_file")
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     q = shlex.quote(path)
     tmp = f"/tmp/.support-write-{stamp}"
@@ -283,10 +338,11 @@ echo "### written {path} (backup: {path}.bak-{stamp})"
 
 @mcp.tool()
 async def reboot_and_wait(reason: str, target: str = "ws", wait_seconds: int = 300) -> str:
-    """Reboot the target and wait until SSH is back. Requires user approval."""
+    """ACTUATION class: reboot an ssh device and wait until SSH is back. Requires user approval (never 'always')."""
     import time
     cfg = _load_target(target)
-    _audit({"tool": "reboot_and_wait", "target": target, "reason": reason})
+    _ssh_only(cfg, "reboot_and_wait")
+    _audit({"tool": "reboot_and_wait", "target": target, "reason": reason, "class": "actuation"})
     await _run_ssh(cfg, "sudo -n systemctl reboot", timeout=20)
     await asyncio.sleep(15)
     _resolve_cache.pop(cfg["NAME"], None)
@@ -297,6 +353,209 @@ async def reboot_and_wait(reason: str, target: str = "ws", wait_seconds: int = 3
             return f"target is back; booted at {r['stdout'].strip()} ({int(time.time()-t0)+15}s)"
         await asyncio.sleep(10)
     return f"target did not come back within {wait_seconds}s — check console/serial"
+
+
+# ---------- device connectors: observe / act / actuate / recover (serial, can, modbus, http) ----------
+
+@mcp.tool()
+async def observe(device: str, query: str = "", seconds: float = 3) -> str:
+    """READ class: look at a non-ssh device without changing it.
+      serial : passive listen for `seconds` (query empty or 'listen'); sending text is device_actuate
+      can    : 'dump' or 'dump id=0x123' — frames seen for `seconds`, counts per id, link state
+      modbus : 'holding A N' | 'input A N' | 'coils A N' | 'discrete A N' | 'id'
+      http   : 'GET /path' (or just '/path'), 'HEAD /path'
+    For ssh devices use collect_facts / run_readonly / read_file."""
+    cfg = _load_target(device)
+    if cfg["TYPE"] == "ssh":
+        return await (collect_facts(device) if not query else run_readonly(query, device))
+    c = _connector(cfg)
+    seconds = max(0.5, min(float(seconds), 60))
+    try:
+        out = await _in_thread(c.observe, query, seconds, timeout=seconds + 30)
+        _audit({"tool": "observe", "target": device, "type": cfg["TYPE"], "query": query, "rc": 0})
+        return out
+    except Exception as e:  # noqa: BLE001
+        _audit({"tool": "observe", "target": device, "type": cfg["TYPE"], "query": query, "rc": 1, "error": str(e)[:300]})
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+async def device_act(device: str, action: str, reason: str, seconds: float = 3) -> str:
+    """CONFIG class (approval per call): change settings on a device that is NOT physical actuation.
+      http   : 'POST|PUT|PATCH|DELETE /path [json body]'
+      ssh    : a shell command (same as run_change)
+    serial/can/modbus writes always reach hardware and are refused here: use device_actuate."""
+    cfg = _load_target(device)
+    if cfg["TYPE"] == "ssh":
+        return await run_change(action, reason, device)
+    c = _connector(cfg)
+    if c.cls_act == connectors.ACTUATION:
+        _audit({"tool": "device_act", "target": device, "type": cfg["TYPE"], "action": action, "reason": reason, "rejected": "actuation class"})
+        return f"REJECTED: writes to a {cfg['TYPE']} device are ACTUATION class — call device_actuate with a rollback plan."
+    try:
+        out = await _in_thread(c.act, action, max(0.5, float(seconds)), timeout=60)
+        _audit({"tool": "device_act", "target": device, "type": cfg["TYPE"], "action": action, "reason": reason, "rc": 0, "class": "config"})
+        return out
+    except Exception as e:  # noqa: BLE001
+        _audit({"tool": "device_act", "target": device, "type": cfg["TYPE"], "action": action, "reason": reason, "rc": 1, "error": str(e)[:300]})
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+async def device_actuate(device: str, action: str, reason: str, rollback: str, seconds: float = 3) -> str:
+    """ACTUATION class (approval per call, never 'always'): talk to hardware or power/flash a host.
+      serial : 'send:<text>' (EOL appended) | 'hex:<bytes>' | 'dtr:0|1' | 'rts:0|1' | 'break'
+      can    : 'send <id-hex>#<data-hex>'   e.g. 'send 123#DEADBEEF'
+      modbus : 'write_register A V' | 'write_registers A V1,V2,..' | 'write_coil A 0|1'
+      http   : same as device_act (for endpoints that move/switch something)
+      ssh    : a power/firmware/disk command (reboot, esptool, fwupdmgr install, dd to a device, mkfs ...)
+    `rollback` must describe how to undo or recover if the action goes wrong (previous value, reset procedure).
+    Say what the action will physically do BEFORE calling this."""
+    cfg = _load_target(device)
+    if len((rollback or "").strip()) < 10:
+        return "REJECTED: `rollback` must describe how to undo this action (previous value / reset procedure), at least 10 characters."
+    ev = {"tool": "device_actuate", "target": device, "type": cfg["TYPE"], "action": action, "reason": reason, "rollback": rollback, "class": "actuation"}
+    try:
+        if cfg["TYPE"] == "ssh":
+            r = await _run_ssh(cfg, action, timeout=900)
+            _audit({**ev, "rc": r["rc"]})
+            return f"rc={r['rc']}\n{r['stdout']}" + (f"\n[stderr]\n{r['stderr']}" if r["stderr"] else "")
+        c = _connector(cfg)
+        out = await _in_thread(c.actuate, action, max(0.5, min(float(seconds), 60)), timeout=90)
+        _audit({**ev, "rc": 0})
+        return out
+    except Exception as e:  # noqa: BLE001
+        _audit({**ev, "rc": 1, "error": str(e)[:300]})
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+async def device_recover(device: str, reason: str) -> str:
+    """ACTUATION class (approval per call): bring a device back — ssh: reboot and wait; serial: reset pulse on
+    DTR/RTS; can: interface down/up (bus-off recovery); modbus/http: reconnect and probe."""
+    cfg = _load_target(device)
+    if cfg["TYPE"] == "ssh":
+        return await reboot_and_wait(reason, device)
+    c = _connector(cfg)
+    try:
+        out = await _in_thread(c.recover, timeout=60)
+        _audit({"tool": "device_recover", "target": device, "type": cfg["TYPE"], "reason": reason, "rc": 0, "class": "actuation"})
+        return out
+    except Exception as e:  # noqa: BLE001
+        _audit({"tool": "device_recover", "target": device, "type": cfg["TYPE"], "reason": reason, "rc": 1, "error": str(e)[:300]})
+        return f"ERROR: {e}"
+
+
+# ---------- inventory ----------
+
+@mcp.tool()
+async def scan(what: str = "all") -> str:
+    """READ class: inventory of what is physically around the Workbench box — USB devices, serial ports,
+    CAN interfaces, network links, hosts answering on each link (ARP/ping), mDNS services.
+    `what`: all | usb | serial | can | net | mdns. Use it before registering a device or when a
+    device is not reachable."""
+    try:
+        proc = await asyncio.create_subprocess_exec(SUPPORT_CTL, "scan", what, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+        text = out.decode(errors="replace")
+    except Exception as e:  # noqa: BLE001
+        text = f"ERROR: scan failed: {e}"
+    _audit({"tool": "scan", "what": what, "rc": 0 if not text.startswith("ERROR") else 1})
+    return text[:MAX_OUTPUT]
+
+
+# ---------- workbench sandbox ----------
+
+@mcp.tool()
+async def workbench_run(script: str, reason: str, language: str = "python", devices: str = "",
+                        network: str = "none", timeout: int = 120, usb: bool = False) -> str:
+    """CONFIG class (approval per call): run YOUR OWN script in the workbench sandbox — a throw-away Docker
+    container on this box with pyserial, python-can, pymodbus, scapy, esptool, paramiko, requests, can-utils,
+    socat, nmap. No GPU, no access to this box's files, 2 GiB RAM, killed after `timeout` seconds.
+      language : python | bash
+      devices  : comma-separated device names whose ports are passed through (serial/modbus-rtu: the tty;
+                 can: host network namespace; ssh: agent key at /work/keys/agent_ed25519 + host allowed)
+      network  : none (default) | device — with 'device' the container can reach ONLY the listed devices' hosts
+      usb      : also expose /dev/bus/usb (esptool, probe-rs, pyusb) — needs the operator's OK
+    /work/devices.json inside the container lists the connection parameters of `devices`.
+    Use this for protocols the built-in tools do not cover and for multi-step bus interactions; explain
+    what the script does before calling."""
+    if language not in ("python", "bash"):
+        return "ERROR: language must be python or bash"
+    if network not in ("none", "device"):
+        return "ERROR: network must be none or device"
+    if not script.strip():
+        return "ERROR: empty script"
+    timeout = max(5, min(int(timeout), 1800))
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = WORKBENCH_DIR / "runs" / stamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+    ext = "py" if language == "python" else "sh"
+    (run_dir / f"script.{ext}").write_text(script)
+    args = ["docker", "run", "--rm", "--name", f"workbench-{stamp}", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--memory", "2g", "--pids-limit", "256", "--cpus", "4", "-v", f"{run_dir}:/work", "-w", "/work",
+            "-e", f"WORKBENCH_RUN={stamp}"]
+    hosts, descr, net_mode = [], {}, "none"
+    for name in [d.strip() for d in devices.split(",") if d.strip()]:
+        cfg = _load_target(name)
+        d = {k: v for k, v in cfg.items() if k not in ("KEY",)}
+        if cfg["TYPE"] == "ssh":
+            host = await _resolve_host(name, cfg)
+            d["HOST"] = host
+            hosts.append(host)
+            keys = run_dir / "keys"; keys.mkdir(exist_ok=True)
+            import shutil
+            shutil.copy(cfg["KEY"], keys / "agent_ed25519"); os.chmod(keys / "agent_ed25519", 0o600)
+            d["KEY"] = "/work/keys/agent_ed25519"
+        else:
+            c = _connector(cfg)
+            args += c.docker_args()
+            if "--network" in c.docker_args():
+                net_mode = "host"
+            if hasattr(c, "net_hosts"):
+                hosts += [h for h in c.net_hosts() if h]
+        descr[name] = d
+    (run_dir / "devices.json").write_text(json.dumps(descr, indent=1))
+    if usb:
+        args += ["-v", "/dev/bus/usb:/dev/bus/usb", "--device-cgroup-rule", "c 189:* rwm"]
+    if net_mode != "host":
+        if network == "device" and hosts:
+            import socket
+            ips = []
+            for h in hosts:
+                try:
+                    ips.append(socket.gethostbyname(h))
+                except OSError:
+                    pass
+            net_mode = "workbench"
+            r = subprocess.run(["sudo", "-n", PRIV, "net-allow", stamp, *ips], capture_output=True, text=True)
+            if r.returncode != 0:
+                return f"ERROR: cannot restrict the sandbox network: {(r.stderr or r.stdout).strip()}"
+        args += ["--network", net_mode]
+    args += [WORKBENCH_IMAGE, "python3" if language == "python" else "bash", f"/work/script.{ext}"]
+    (run_dir / "docker-args.txt").write_text(" ".join(shlex.quote(a) for a in args))
+    t0 = dt.datetime.now()
+    try:
+        proc = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            rc = proc.returncode
+        except asyncio.TimeoutError:
+            subprocess.run(["docker", "kill", f"workbench-{stamp}"], capture_output=True)
+            out_b, err_b, rc = b"", f"killed after {timeout}s".encode(), 124
+    finally:
+        if net_mode == "workbench":
+            subprocess.run(["sudo", "-n", PRIV, "net-clear", stamp], capture_output=True)
+    out, err = out_b.decode(errors="replace"), err_b.decode(errors="replace")
+    if "Unable to find image" in err or "No such image" in err:
+        err += "\nworkbench image missing: run `support-ctl workbench build` on the box (needs internet once)"
+    (run_dir / "stdout.txt").write_text(out); (run_dir / "stderr.txt").write_text(err)
+    secs = (dt.datetime.now() - t0).total_seconds()
+    _audit({"tool": "workbench_run", "reason": reason, "language": language, "devices": devices, "network": net_mode,
+            "usb": usb, "rc": rc, "seconds": round(secs, 1), "run": stamp, "class": "config"})
+    if len(out) > MAX_OUTPUT:
+        out = out[:MAX_OUTPUT] + f"\n[... truncated, {len(out)} bytes total; full output in {run_dir}/stdout.txt]"
+    return f"rc={rc} ({secs:.1f}s, run {stamp})\n{out}" + (f"\n[stderr]\n{err[-4000:]}" if err.strip() else "")
 
 
 if __name__ == "__main__":

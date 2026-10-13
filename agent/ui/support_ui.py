@@ -87,15 +87,38 @@ async def oc(method: str, path: str, **kw) -> httpx.Response:
     return r
 
 
+# Action classes by tool name (mirrors agent/mcp/target_host.py). "always" is refused for ACTUATION tools.
+ACTUATION_TOOLS = {"device_actuate", "device_recover", "reboot_and_wait"}
+CONFIG_TOOLS = {"run_change", "write_file", "device_act", "workbench_run"}
+
+
+def _tool_class(tool: str) -> str:
+    t = (tool or "").replace("target-host_", "")
+    return "actuation" if t in ACTUATION_TOOLS else "config" if t in CONFIG_TOOLS else "read"
+
+
 def _targets() -> list[dict]:
     out = []
     if TARGETS_DIR.exists():
         for p in sorted(TARGETS_DIR.glob("*.env")):
-            cfg = {"USER": "support-agent", "PORT": "22"}
+            cfg = {}
             for line in p.read_text().splitlines():
                 if "=" in line and not line.startswith("#"):
-                    k, v = line.split("=", 1); cfg[k.strip()] = v.strip()
-            out.append({"name": p.stem, "host": cfg.get("HOST", "?"), "user": cfg["USER"], "port": cfg["PORT"]})
+                    k, v = line.split("=", 1); cfg[k.strip()] = v.strip().strip('"')
+            t = (cfg.get("TYPE") or "ssh").lower()
+            if t == "serial":
+                where = f"{cfg.get('PORT', '/dev/ttyUSB0')} @ {cfg.get('BAUD', 115200)}"
+            elif t == "can":
+                where = f"{cfg.get('IFACE', 'can0')} @ {cfg.get('BITRATE', 500000)}"
+            elif t == "modbus":
+                port = cfg.get("PORT", "502")
+                where = f"{port} unit {cfg.get('UNIT', 1)}" if port.startswith("/dev/") else f"{cfg.get('HOST', '?')}:{port} unit {cfg.get('UNIT', 1)}"
+            elif t == "http":
+                where = cfg.get("URL", "?")
+            else:
+                where = f"{cfg.get('USER', 'support-agent')}@{cfg.get('HOST', 'auto')}" + (f" ({cfg['IP_LAST']})" if cfg.get("HOST", "auto") == "auto" and cfg.get("IP_LAST") else "")
+            out.append({"name": p.stem, "type": t, "where": where,
+                        "host": cfg.get("HOST", "?"), "user": cfg.get("USER", "support-agent"), "port": cfg.get("PORT", "22")})
     return out
 
 
@@ -194,6 +217,7 @@ async def state():
                      for s in sessions[:50]],
         "pending": perms, "llm": llm, "profiles": profiles,
         "targets": _targets(), "docs": _docs_status(),
+        "classes": {"actuation": sorted(ACTUATION_TOOLS), "config": sorted(CONFIG_TOOLS)},
     }
 
 
@@ -278,6 +302,14 @@ async def permission(sid: str, pid: str, body: dict):
     resp = (body or {}).get("response")
     if resp not in ("once", "always", "reject"):
         raise HTTPException(400, "response must be once|always|reject")
+    if resp == "always":
+        # ACTUATION class is approved one call at a time, whatever the browser sent (PLAN.md §4 phase A).
+        pending = [p for p in (await oc("GET", "/permission")).json() if p.get("id") == pid]
+        for p in pending:
+            tool = (p.get("tool") or {}).get("name") if isinstance(p.get("tool"), dict) else None
+            tool = tool or (p.get("metadata") or {}).get("tool") or p.get("permission") or ""
+            if _tool_class(tool) == "actuation":
+                raise HTTPException(409, "actuation is approved one call at a time; use 'once'")
     await oc("POST", f"/session/{sid}/permissions/{pid}", json={"response": resp})
     return {"ok": True}
 

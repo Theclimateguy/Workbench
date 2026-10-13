@@ -46,6 +46,8 @@ services:
       - HF_HUB_OFFLINE=1
       - VLLM_MXFP4_BACKEND=marlin
       - VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+      # Harmony tokenizer vocab, pre-fetched by install/fetch-models.sh (openai_harmony downloads it otherwise -> 500 offline)
+      - TIKTOKEN_RS_CACHE_DIR=${MODEL_PATH}/tiktoken
     command: >
       ${MODEL_PATH}
       --served-model-name ${SERVED_NAME:-deep}

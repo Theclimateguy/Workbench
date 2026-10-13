@@ -116,6 +116,12 @@ if phase vllm-image; then
   done_ vllm-image
 fi
 
+# ---------------------------------------------------------------- 5b. workbench sandbox image
+if phase workbench-image; then
+  support-ctl workbench build || warn "workbench image not built (no internet?) — run 'support-ctl workbench build' later"
+  done_ workbench-image
+fi
+
 # ---------------------------------------------------------------- 6. models
 if phase ui-assets; then "$REPO/install/fetch-ui-assets.sh"; done_ ui-assets; fi
 if [ "$SKIP_MODELS" = 0 ]; then
@@ -155,6 +161,7 @@ if phase verify; then
     printf 'HOST=127.0.0.1\nUSER=support-agent\nPORT=22\nKEY=/opt/support/keys/agent_ed25519\n' > /opt/support/targets/self.env
   fi
   /opt/support/venv/bin/python "$REPO/tests/mcp_smoke.py" --target self | tail -3 | sed 's/^/    /'
+  /opt/support/venv/bin/python "$REPO/tests/connectors_smoke.py" | tail -3 | sed 's/^/    /' || warn "connector smoke test failed (see above)"
   done_ verify
 fi
 

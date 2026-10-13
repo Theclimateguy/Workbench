@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# support-priv — the few root operations the agent stack needs, as fixed verbs (sudoers rule from deploy.sh).
+#   net-allow RUN IP...   let sandbox network "workbench" reach only IP... (DOCKER-USER rules tagged RUN)
+#   net-clear RUN         remove the rules tagged RUN
+#   can-restart IFACE BITRATE   bring a CAN interface down and up (bus-off recovery) / up for the first time
+#   arp-scan IFACE        ARP sweep of the link (needs raw sockets)
+# Anything else is refused. Never add a verb that takes a free-form command.
+set -euo pipefail
+NET=workbench
+SUBNET=172.31.77.0/24
+verb=${1:-}; shift || true
+tag_ok() { [[ "$1" =~ ^[A-Za-z0-9_-]{1,40}$ ]] || { echo "bad run id" >&2; exit 2; }; }
+ip_ok()  { [[ "$1" =~ ^[0-9a-fA-F:.]{1,45}$ ]] || { echo "bad address: $1" >&2; exit 2; }; }
+case "$verb" in
+  net-allow)
+    run=${1:?run id}; shift; tag_ok "$run"
+    docker network inspect "$NET" >/dev/null 2>&1 || docker network create --subnet "$SUBNET" "$NET" >/dev/null
+    # established replies back in, then only the allowed destinations out, everything else from the sandbox subnet rejected
+    iptables -I DOCKER-USER 1 -s "$SUBNET" -m conntrack --ctstate ESTABLISHED,RELATED -m comment --comment "wb-$run" -j ACCEPT
+    for ip in "$@"; do ip_ok "$ip"; iptables -I DOCKER-USER 2 -s "$SUBNET" -d "$ip" -m comment --comment "wb-$run" -j ACCEPT; done
+    iptables -I DOCKER-USER $(( ${#@} + 2 )) -s "$SUBNET" -m comment --comment "wb-$run" -j REJECT
+    echo "sandbox network $NET may reach: $*" ;;
+  net-clear)
+    run=${1:?run id}; tag_ok "$run"
+    while read -r rule; do
+      [ -n "$rule" ] && eval "iptables -D DOCKER-USER ${rule#-A DOCKER-USER }" || true
+    done < <(iptables -S DOCKER-USER | grep -F -- "--comment wb-$run" || true)
+    echo "sandbox rules for $run removed" ;;
+  can-restart)
+    ifc=${1:?iface}; br=${2:-500000}
+    [[ "$ifc" =~ ^[a-z0-9]{1,15}$ && "$br" =~ ^[0-9]{4,8}$ ]] || { echo "bad iface/bitrate" >&2; exit 2; }
+    ip link set "$ifc" down 2>/dev/null || true
+    if [ "$(cat /sys/class/net/"$ifc"/type 2>/dev/null)" = 280 ] && ip -d link show "$ifc" | grep -q ' can '; then
+      ip link set "$ifc" type can bitrate "$br" restart-ms 100
+    fi
+    ip link set "$ifc" up
+    ip -d -br link show "$ifc" ;;
+  arp-scan)
+    ifc=${1:?iface}; [[ "$ifc" =~ ^[A-Za-z0-9]{1,15}$ ]] || { echo "bad iface" >&2; exit 2; }
+    exec arp-scan --localnet --interface "$ifc" --retry 2 --timeout 300 --plain --ignoredups ;;
+  *) echo "support-priv: unknown verb '$verb' (net-allow|net-clear|can-restart|arp-scan)" >&2; exit 2 ;;
+esac

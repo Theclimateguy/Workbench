@@ -19,6 +19,10 @@ MODEL_FAST="nvidia/Qwen3.6-35B-A3B-NVFP4|1355db6a052410cfd62085d94b58866fd0f2c3c
 MODEL_DEEP="openai/gpt-oss-120b|b5c939de8f754692c1647ca79fbf85e8c1e70f8a|gpt-oss-120b|61"
 # previous deep, kept for reference / rollback: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4@ff433f5493e25d631c9f12b5d55c674229923d02 (+ MTPv2 draft c929f8a5)
 
+# Workbench sandbox image (stack/workbench/Dockerfile; built on the box by `support-ctl workbench build`)
+WORKBENCH_BASE_IMAGE=python:3.12-slim-bookworm
+WORKBENCH_IMAGE=workbench:local
+
 # Browser-side speech-to-text (served by support-ui from /opt/support/ui-assets, fetched by install/fetch-ui-assets.sh)
 TRANSFORMERS_JS_VERSION=4.3.1
 ORT_WEB_VERSION=1.31.0-dev.20260914-8d85527a0
