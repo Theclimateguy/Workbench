@@ -6,7 +6,8 @@ set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 MODELS_DIR=${MODELS_DIR:-/opt/models}
 HF=${HF:-/opt/support/venv/bin/hf}
-LOG=/opt/build/logs/fetch-models.log
+LOG=${FETCH_LOG:-/opt/build/logs/fetch-models.log}
+mkdir -p "$(dirname "$LOG")" 2>/dev/null || LOG=$HOME/fetch-models.log   # no sudo yet (pre-bootstrap staging): log in $HOME
 # shellcheck disable=SC1091
 . "$REPO/install/versions.lock"
 want=${1:-fast}
@@ -20,7 +21,7 @@ fetch() {  # fetch "repo|rev|dir|GiB"
   local free; free=$(df -BG --output=avail "$MODELS_DIR" | tail -1 | tr -dc '0-9')
   [ "$free" -gt $((gib + 10)) ] || { echo "not enough free space for $dir (${gib} GiB needed, ${free} GiB free)" >&2; exit 1; }
   echo "  $dir: downloading $repo@$rev (~${gib} GiB) ..."
-  mkdir -p "$dest" /opt/build/logs
+  mkdir -p "$dest"
   HF_HUB_ENABLE_HF_TRANSFER=0 "$HF" download "$repo" --revision "$rev" --local-dir "$dest" \
     --exclude "*.gguf" --exclude "original/*" --exclude "metal/*" 2>&1 | tee -a "$LOG" | grep -vE "^\s*$" | tail -2
   rm -rf "$dest/.cache"
