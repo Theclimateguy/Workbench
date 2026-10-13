@@ -57,6 +57,18 @@ cd ~/Workbench
 
 В конце — `support-ctl status` с адресами. Дальше по мануалу: `target add`, документация, `docs reload`.
 
+## 3a. Веса без интернета на устройстве
+
+Если у GX10 нет быстрого канала (в поле, или интернет только через ноутбук), веса можно скачать на любой машине с `python3` и перенести по кабелю или на USB-SSD:
+
+```bash
+pip install huggingface_hub            # один раз, на машине с интернетом
+MODELS_DIR=/Volumes/SSD/models HF=hf ./install/fetch-models.sh deep   # из клона репозитория, те же ревизии из versions.lock
+rsync -a /Volumes/SSD/models/ admin@10.77.0.1:/opt/models/            # потом на GX10 (или с USB-SSD прямо на нём)
+```
+
+Маркер `.workbench-rev` в папке модели переносится вместе с файлами, поэтому `bootstrap.sh`/`fetch-models.sh` на GX10 увидят модель как готовую. `support-ctl model` и тумблер в интерфейсе отказываются переключаться на профиль, чьих весов на диске нет.
+
 ## 4. Обновления
 
 - **Софт** (агент, UI, скрипты, конфиги): на GX10 `support-ctl update` — `git pull` + `deploy.sh`. Веса, цели, ключи, документация не трогаются.

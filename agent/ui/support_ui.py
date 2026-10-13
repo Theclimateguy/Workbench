@@ -301,6 +301,11 @@ async def switch_model(body: dict):
     prof = (body or {}).get("profile")
     if prof not in ("fast", "deep"):
         raise HTTPException(400, "profile must be fast|deep")
+    env = Path(os.environ.get("SUPPORT_STACK_DIR", "/opt/support-stack")) / "env" / f"{prof}.env"
+    mp = next((ln.split("=", 1)[1].strip() for ln in env.read_text().splitlines() if ln.startswith("MODEL_PATH=")), "") if env.exists() else ""
+    local = Path("/opt" + mp) if mp.startswith("/models/") else None
+    if not local or not (local / "config.json").exists():
+        raise HTTPException(409, f"веса профиля {prof} не скачаны ({local}); install/fetch-models.sh {prof}")
     r = subprocess.run(["sudo", "-n", "systemctl", "start", f"llm@{prof}"], capture_output=True, text=True)
     if r.returncode != 0:
         raise HTTPException(500, f"cannot start llm@{prof}: {(r.stderr or r.stdout).strip()[:200]}")
