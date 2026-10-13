@@ -14,8 +14,10 @@ VLLM_IMAGE_DIGEST=sha256:61fc8a896b0a4fbbbdc063bc4b0dbc25ce98e02b5050c24aeb7830a
 
 # Models: HF repo id | git revision (commit) | local dir under /opt/models | size GiB
 MODEL_FAST="nvidia/Qwen3.6-35B-A3B-NVFP4|1355db6a052410cfd62085d94b58866fd0f2c3c5|Qwen3.6-35B-A3B-NVFP4|22"
-MODEL_DEEP="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4|ff433f5493e25d631c9f12b5d55c674229923d02|Nemotron-3-Super-120B-A12B-NVFP4|75"
-MODEL_DEEP_DRAFT="nvidia/Nemotron-3-Super-120B-A12B-BF16-MTPv2|c929f8a55d0527fea9f58b4cedc9e0c855cfc421|Nemotron-3-Super-MTPv2|6"
+# deep = gpt-oss-120b (MXFP4, ~61 GiB on disk after excluding original/ and metal/); replaced Nemotron 3 Super on 2026-10-13
+# (Nemotron: 75 GiB + 24 GiB KV left ~5 GB for the OS, ~20 tok/s; see docs/bench-log.md).
+MODEL_DEEP="openai/gpt-oss-120b|b5c939de8f754692c1647ca79fbf85e8c1e70f8a|gpt-oss-120b|61"
+# previous deep, kept for reference / rollback: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4@ff433f5493e25d631c9f12b5d55c674229923d02 (+ MTPv2 draft c929f8a5)
 
 # Browser-side speech-to-text (served by support-ui from /opt/support/ui-assets, fetched by install/fetch-ui-assets.sh)
 TRANSFORMERS_JS_VERSION=4.3.1

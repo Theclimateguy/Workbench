@@ -42,18 +42,16 @@ services:
     <<: *vllm
     container_name: llm-deep
     profiles: [deep]
-    environment:            # NVIDIA Spark recipe for Nemotron 3 Super NVFP4
+    environment:            # gpt-oss-120b MXFP4 on GB10: Marlin MoE path (see env/deep.env)
       - HF_HUB_OFFLINE=1
-      - VLLM_NVFP4_GEMM_BACKEND=marlin
+      - VLLM_MXFP4_BACKEND=marlin
       - VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
-      - VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm
-      - VLLM_USE_FLASHINFER_MOE_FP4=0
     command: >
       ${MODEL_PATH}
       --served-model-name ${SERVED_NAME:-deep}
       --host 127.0.0.1 --port ${LLM_PORT:-8000}
-      --max-model-len ${MAX_MODEL_LEN:-65536}
-      --gpu-memory-utilization ${GPU_MEM_UTIL:-0.78}
+      --max-model-len ${MAX_MODEL_LEN:-131072}
+      --gpu-memory-utilization ${GPU_MEM_UTIL:-0.80}
       --enable-prefix-caching
       --enable-auto-tool-choice
       ${MODEL_ARGS}

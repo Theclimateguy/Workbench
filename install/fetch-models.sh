@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # fetch-models.sh [fast|deep|all] — download model weights into /opt/models at the revisions
-# pinned in versions.lock. Resumable (re-run after a dropped connection). ~22 GiB fast, ~81 GiB deep.
+# pinned in versions.lock. Resumable (re-run after a dropped connection). ~22 GiB fast, ~61 GiB deep.
 # Optional: HF_TOKEN env for higher rate limits; HF_ENDPOINT for a mirror.
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -22,7 +22,7 @@ fetch() {  # fetch "repo|rev|dir|GiB"
   echo "  $dir: downloading $repo@$rev (~${gib} GiB) ..."
   mkdir -p "$dest" /opt/build/logs
   HF_HUB_ENABLE_HF_TRANSFER=0 "$HF" download "$repo" --revision "$rev" --local-dir "$dest" \
-    --exclude "*.gguf" --exclude "original/*" 2>&1 | tee -a "$LOG" | grep -vE "^\s*$" | tail -2
+    --exclude "*.gguf" --exclude "original/*" --exclude "metal/*" 2>&1 | tee -a "$LOG" | grep -vE "^\s*$" | tail -2
   rm -rf "$dest/.cache"
   echo "$rev" > "$dest/.workbench-rev"
   echo "  $dir: done ($(du -sh "$dest" | cut -f1))"
@@ -30,7 +30,7 @@ fetch() {  # fetch "repo|rev|dir|GiB"
 
 case "$want" in
   fast) fetch "$MODEL_FAST" ;;
-  deep) fetch "$MODEL_DEEP"; fetch "$MODEL_DEEP_DRAFT" ;;
-  all)  fetch "$MODEL_FAST"; fetch "$MODEL_DEEP"; fetch "$MODEL_DEEP_DRAFT" ;;
+  deep) fetch "$MODEL_DEEP"; [ -n "${MODEL_DEEP_DRAFT:-}" ] && fetch "$MODEL_DEEP_DRAFT" ;;
+  all)  fetch "$MODEL_FAST"; fetch "$MODEL_DEEP"; [ -n "${MODEL_DEEP_DRAFT:-}" ] && fetch "$MODEL_DEEP_DRAFT" ;;
   *) echo "usage: $0 fast|deep|all" >&2; exit 1 ;;
 esac

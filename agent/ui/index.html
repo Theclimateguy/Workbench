@@ -122,7 +122,7 @@
       <button type="button" id="exportSession" title="Скачать сессию как Markdown">Экспорт</button>
     </div>
     <div class="right">
-      <div class="segment" id="profile" title="Профиль модели: fast — Qwen3.6 35B (быстро), deep — Nemotron 120B (медленнее, глубже). Переключение занимает 6–12 минут.">
+      <div class="segment" id="profile" title="Профиль модели: fast — Qwen3.6 35B (быстро), deep — gpt-oss 120B (глубже рассуждает). Переключение занимает 5–8 минут.">
         <button type="button" data-prof="fast">fast</button>
         <button type="button" data-prof="deep">deep</button>
       </div>
@@ -185,7 +185,7 @@ async function refreshState() {
     const s = await api("/api/state");
     renderProfile(s);
     const llm = $("#llmChip"); llm.querySelector(".dot").className = "dot " + (s.llm.up ? "ok" : (s.profiles.fast === "activating" || s.profiles.deep === "activating" || switching) ? "warn" : "bad");
-    llm.querySelector(".l").textContent = s.llm.up ? (s.profiles.fast === "active" ? "Qwen3.6 35B" : "Nemotron 120B") : (s.profiles.fast === "activating" || s.profiles.deep === "activating" || switching) ? "модель загружается…" : "LLM offline";
+    llm.querySelector(".l").textContent = s.llm.up ? (s.profiles.fast === "active" ? "Qwen3.6 35B" : "gpt-oss 120B") : (s.profiles.fast === "activating" || s.profiles.deep === "activating" || switching) ? "модель загружается…" : "LLM offline";
     const t = $("#targetChip"); targetName = s.targets[0]?.name || "";
     t.querySelector(".dot").className = "dot " + (s.targets.length ? "ok" : "warn");
     t.querySelector(".l").textContent = s.targets.length ? s.targets.map(x => x.name).join(", ") : "нет целей";
@@ -300,7 +300,7 @@ let switching = null;
 $("#profile").addEventListener("click", async e => {
   const b = e.target.closest("button[data-prof]"); if (!b || b.classList.contains("active")) return;
   const p = b.dataset.prof;
-  if (!confirm(`Переключить модель на «${p}»? Текущая выгрузится, загрузка новой займёт ${p === "deep" ? "10–12" : "5–6"} минут; идущий ответ агента прервётся.`)) return;
+  if (!confirm(`Переключить модель на «${p}»? Текущая выгрузится, загрузка новой займёт 5–8 минут; идущий ответ агента прервётся.`)) return;
   try { await api("/api/model", {method:"POST", body: JSON.stringify({profile: p})}); switching = p; refreshState(); }
   catch (err) { alert("Не удалось переключить: " + err.message); }
 });

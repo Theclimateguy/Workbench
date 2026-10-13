@@ -49,7 +49,7 @@
 | Профиль | Модель | tok/s | Память | Старт |
 |---|---|---|---|---|
 | fast | Qwen3.6-35B-A3B NVFP4 + MTP | 95 | 20 + 25 (KV) ГиБ | 6 мин |
-| deep | Nemotron 3 Super 120B NVFP4 + MTPv2 | 24 | 75 + 24 ГиБ | 12 мин |
+| deep | gpt-oss-120b MXFP4 (Marlin) | замерить | 61 + KV ГиБ (util 0.80) | ~6 мин |
 
 Профили взаимоисключающие (`Conflicts=`), переключение `support-ctl model`.
 

@@ -7,8 +7,8 @@
 #
 # Idempotent and resumable: every phase leaves a marker in /var/lib/support/bootstrap/ and is
 # skipped on re-run; delete a marker to redo that phase. Downloads ~22 GiB (fast) or ~103 GiB
-# (with --with-deep) plus the ~12 GiB vLLM image, straight onto this machine.
-# Total: ~30 min on a 1 Gbit line for fast, ~2 h with deep. Model load after that ~6 min.
+# (with --with-deep: ~83 GiB) plus the ~12 GiB vLLM image, straight onto this machine.
+# Total: ~30 min on a 1 Gbit line for fast, ~1.5 h with deep. Model load after that ~6 min.
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 # shellcheck disable=SC1091
@@ -52,7 +52,7 @@ if phase preflight; then
   fi
   command -v nvidia-smi >/dev/null && nvidia-smi -L | sed 's/^/    /' || die "nvidia-smi not found"
   command -v docker >/dev/null || die "docker not found (should ship with DGX OS)"
-  need=$(( 40 + (SKIP_MODELS==0 ? 25 : 0) + (WITH_DEEP==1 ? 85 : 0) ))
+  need=$(( 40 + (SKIP_MODELS==0 ? 25 : 0) + (WITH_DEEP==1 ? 70 : 0) ))
   free=$(df -BG --output=avail /opt | tail -1 | tr -dc '0-9')
   [ "$free" -gt "$need" ] || die "need ~${need} GiB free under /opt, have ${free} GiB"
   curl -fsS -m 10 https://huggingface.co >/dev/null || die "no internet (huggingface.co unreachable) — bootstrap needs a connection"
