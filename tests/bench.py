@@ -86,7 +86,7 @@ def content_check(url, model):
     """Plain chat answer must carry text in `content` with reasoning kept apart (`reasoning_content`).
     Catches the gpt-oss/Harmony failure mode on SM121 where the first token is wrong and content comes back null."""
     body = {"model": model, "messages": [{"role": "user", "content": "Ответь одной короткой фразой: что такое systemd?"}],
-            "max_tokens": 400, "temperature": 0}
+            "max_tokens": 2048, "temperature": 0}
     data = json.load(post(url, body))
     msg = data["choices"][0]["message"]
     content = (msg.get("content") or "").strip()
