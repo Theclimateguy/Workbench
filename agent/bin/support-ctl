@@ -57,7 +57,7 @@ cmd_status() {
 
 model_dir_present() {  # model_dir_present fast|deep -> 0 if the profile's weights are on disk
   local mp; mp=$(sed -n 's|^MODEL_PATH=/models/||p' "$STACK_DIR/env/$1.env")
-  [ -n "$mp" ] && [ -f "/opt/models/$mp/.workbench-rev" -o -f "/opt/models/$mp/config.json" ]
+  [ -n "$mp" ] && { [ -f "/opt/models/$mp/.workbench-rev" ] || [ -f "/opt/models/$mp/config.json" ]; }
 }
 
 cmd_model() {
