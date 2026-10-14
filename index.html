@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#05080c">
 <title>Research</title>
-<link rel="icon" href="/favicon.ico" sizes="any">
-<link rel="icon" href="/static/icons/icon-32.png" type="image/png" sizes="32x32">
-<link rel="icon" href="/static/icons/icon-64.png" type="image/png" sizes="64x64">
-<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<link rel="icon" href="/favicon.ico?v=3" sizes="any">
+<link rel="icon" href="/static/icons/icon-32.png?v=3" type="image/png" sizes="32x32">
+<link rel="icon" href="/static/icons/icon-64.png?v=3" type="image/png" sizes="64x64">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=3">
 <link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/static/fonts/fonts.css">
 <link rel="stylesheet" href="/static/katex/katex.min.css">
@@ -309,6 +309,7 @@ const TOOL_LABEL = {
   gh_search_repos: a => `github.repos "${a.query}"`, gh_search_code: a => `github.code "${a.query}"`,
   gh_search_issues: a => `github.issues "${a.query}"`, gh_repo: a => `github.open ${a.repo}`,
   gh_read: a => `github.read ${a.repo}/${a.path || ''}`, read_upload: a => `file.read ${a.file_id}${a.offset ? ' @' + a.offset : ''}`,
+  library_search: a => `library.search "${a.query}"`, library_read: a => `library.read doc:${a.doc_id}${a.page ? ' p.' + a.page : ''}`, library_list: () => 'library.list',
 };
 const label = (n, a) => (TOOL_LABEL[n] ? TOOL_LABEL[n](a || {}) : n);
 const THINK = ['off', 'low', 'medium', 'high'];

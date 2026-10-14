@@ -1,0 +1,16 @@
+#!/bin/sh
+# mdns-alias NAME — publish NAME (e.g. research.local) for this box's LAN address over mDNS and follow address changes.
+# Gives the research chat its own host name: Safari keys favourite/bookmark icons by host, so two apps on one IP
+# (different ports) would share one icon.
+NAME=${1:?usage: mdns-alias NAME.local}
+pid=""; cur=""
+trap '[ -n "$pid" ] && kill "$pid" 2>/dev/null; exit 0' TERM INT
+while :; do
+  ip=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')
+  if [ "$ip" != "$cur" ] || { [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; }; then
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null
+    pid=""; cur=$ip
+    if [ -n "$ip" ]; then avahi-publish -a -R "$NAME" "$ip" & pid=$!; fi
+  fi
+  sleep 30
+done

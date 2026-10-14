@@ -49,6 +49,9 @@ DATA = Path(os.environ.get("RESEARCH_DATA", HERE / "data"))
 PASSWORD = os.environ.get("RESEARCH_PASSWORD", "")
 STACK_DIR = Path(os.environ.get("STACK_DIR", "/opt/support-stack"))
 TOOL_SERVERS = ["web", "papers", "github"]
+# The Workbench offline library (manuals, papers, notes) when installed on this box: (python, server script)
+LIBRARY_SERVER = (os.environ.get("LIBRARY_PYTHON", "/opt/support/venv/bin/python"),
+                  os.environ.get("LIBRARY_SERVER", "/opt/support/mcp/library.py"))
 MAX_STEPS = 16            # tool rounds per answer
 FILE_INLINE = 40_000      # chars of each uploaded file put straight into the prompt; the rest via read_upload
 OLD_TOOL_CHARS = 2_000    # tool results from earlier turns are cut to this when the history is replayed
@@ -62,7 +65,8 @@ PROFILES = {
 }
 
 SYSTEM = """You are a research assistant running fully locally on the user's own machine. Today is {today}.
-Tools: web search and page reading, arXiv and Zenodo (papers, datasets, software), GitHub (read-only), and the user's uploaded files.
+Tools: web search and page reading, arXiv and Zenodo (papers, datasets, software), GitHub (read-only), the user's uploaded files,
+and (when present) the offline library of the user's own documents (library_search / library_read, cite as [doc:ID p.N]).
 - Use tools whenever facts may be recent, specific or checkable; do not invent papers, numbers, URLs or quotes.
 - For literature questions search arXiv/Zenodo first, open the most relevant items before summarising.
 - Cite sources inline as markdown links ([title](url), arXiv ids, DOIs). Say plainly when something was not found.
@@ -198,10 +202,14 @@ class Tools:
 
     async def start(self):
         env = {k: v for k, v in os.environ.items()}
-        for name in TOOL_SERVERS:
+        servers = [(n, sys.executable, str(HERE / "tools" / f"{n}.py"), str(HERE / "tools")) for n in TOOL_SERVERS]
+        if Path(LIBRARY_SERVER[0]).exists() and Path(LIBRARY_SERVER[1]).exists():
+            env.setdefault("LIBRARY_DIR", "/opt/library")
+            env.setdefault("HF_HUB_OFFLINE", "1")
+            servers.append(("library", LIBRARY_SERVER[0], LIBRARY_SERVER[1], str(Path(LIBRARY_SERVER[1]).parent)))
+        for name, python, script, cwd in servers:
             try:
-                params = StdioServerParameters(command=sys.executable, args=[str(HERE / "tools" / f"{name}.py")],
-                                               env=env, cwd=str(HERE / "tools"))
+                params = StdioServerParameters(command=python, args=[script], env=env, cwd=cwd)
                 r, w = await self.stack.enter_async_context(stdio_client(params))
                 s = await self.stack.enter_async_context(ClientSession(r, w))
                 await s.initialize()
@@ -274,7 +282,7 @@ def favicon():
 def manifest():
     return JSONResponse({"name": "Research", "short_name": "Research", "start_url": "/", "display": "standalone",
                          "background_color": "#05080c", "theme_color": "#05080c",
-                         "icons": [{"src": f"/static/icons/icon-{s}.png", "sizes": f"{s}x{s}", "type": "image/png"}
+                         "icons": [{"src": f"/static/icons/icon-{s}.png?v=3", "sizes": f"{s}x{s}", "type": "image/png"}
                                    for s in (192, 512)]})
 
 

@@ -42,7 +42,7 @@ log "python venv"
 "$DEST/venv/bin/pip" install -q -r "$DEST/requirements.txt"
 
 log "systemd units (user: $RUN_USER)"
-for u in research-chat.service research-search.service; do
+for u in research-chat.service research-search.service research-mdns.service; do
   sed -e "s|^User=admin|User=$RUN_USER|; s|^Group=admin|Group=$RUN_USER|" "$DEST/systemd/$u" \
     | sudo tee "/etc/systemd/system/$u" >/dev/null
 done
@@ -66,9 +66,10 @@ DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/$(id -u
 
 sudo systemctl enable --quiet research-search research-chat
 sudo systemctl restart research-search research-chat
+if command -v avahi-publish >/dev/null; then sudo systemctl enable --quiet --now research-mdns; sudo systemctl restart research-mdns; fi
 
 for _ in $(seq 30); do curl -sf http://127.0.0.1:8888/healthz >/dev/null && break; sleep 2; done
 curl -sf "http://127.0.0.1:8888/search?q=test&format=json" >/dev/null && log "SearXNG ok" || log "SearXNG not answering yet: docker logs research-searxng"
 sleep 3
 PORT=$(sudo sed -n 's/^RESEARCH_PORT=//p' /etc/research/research.env)
-curl -sf "http://127.0.0.1:$PORT/api/status" && echo && log "open http://$(hostname -I | awk '{print $1}'):$PORT"
+curl -sf "http://127.0.0.1:$PORT/api/status" && echo && log "open http://research.local:$PORT (or http://$(hostname -I | awk '{print $1}'):$PORT)"
