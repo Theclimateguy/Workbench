@@ -259,6 +259,10 @@ echo "### failed units"; systemctl --failed --no-legend
 echo "### recent errors (this boot)"; journalctl -p err -b --no-pager -n 40 -o short
 echo "### dpkg state"; sudo -n dpkg --audit 2>&1 | head -20; apt-get -s -o Debug::NoLocking=1 upgrade 2>/dev/null | grep -c "^Inst" | sed 's/^/upgradable: /'
 echo "### gpu"; nvidia-smi --query-gpu=name,driver_version,memory.used,memory.total --format=csv 2>&1 | head -3
+echo "### pci"; lspci 2>/dev/null | grep -iE "vga|3d controller|ethernet|network|serial bus|usb controller|nvme|sata|raid|can" | head -20
+echo "### usb"; lsusb 2>/dev/null | grep -v "root hub" | head -20
+echo "### serial"; ls -l /dev/serial/by-id/ 2>/dev/null | awk '/->/ {print $9 " -> " $11}'; ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null | head
+echo "### block"; lsblk -d -o NAME,SIZE,MODEL,TRAN,ROTA 2>/dev/null
 echo "### reboot"; [ -f /var/run/reboot-required ] && cat /var/run/reboot-required || echo "no reboot pending"
 """
     r = await _run_ssh(cfg, script)

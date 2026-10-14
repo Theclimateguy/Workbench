@@ -496,14 +496,36 @@ tabs.device = { title: "Устройство", cur: null, facts: {}, scan: null,
     if (!this.cur && targetName) this.load(targetName); else this.draw(); },
   async load(name, force) { this.cur = name; if (!name) return this.draw(); $("#devReport").href = `/api/device/${encodeURIComponent(name)}/report`;
     if (!force && this.facts[name]) return this.draw(); const b = $("#devBody"); if (b) b.innerHTML = `<div class="empty">Собираю паспорт ${esc(name)}…</div>`;
-    try { this.facts[name] = await api(`/api/device/${encodeURIComponent(name)}/facts`, {method:"POST", body: "{}"}); this.facts[name].at = new Date(); } catch (e) { this.facts[name] = { error: e.message }; } this.draw(); },
+    try { const f = await api(`/api/device/${encodeURIComponent(name)}/facts`, {method:"POST", body: "{}"}); f.at = new Date();
+      if (f.type === "ssh" && !Object.keys(f.sections || {}).length) f.error = (f.text || "").replace(/^\s*\[stderr\]\s*/, "").trim() || "нет ответа";
+      this.facts[name] = f; } catch (e) { this.facts[name] = { error: e.message }; } this.draw(); },
+  async loadAll(targets) {       // topology: collect passports of every device not yet seen, one at a time, redraw as they land
+    if (this._loading) return; this._loading = true;
+    try { for (const t of targets) { if (this.facts[t.name]) continue;
+        try { const f = await api(`/api/device/${encodeURIComponent(t.name)}/facts`, {method:"POST", body: "{}"}); f.at = new Date();
+          if (f.type === "ssh" && !Object.keys(f.sections || {}).length) f.error = (f.text || "").replace(/^\s*\[stderr\]\s*/, "").trim() || "нет ответа";
+          this.facts[t.name] = f; }
+        catch (e) { this.facts[t.name] = { error: e.message }; }
+        if (this.sub === "topology") this.draw(); } }
+    finally { this._loading = false; } },
   async doScan() { const b = $("#devBody"); if (b) b.innerHTML = `<div class="empty">Сканирую USB, порты, CAN, сеть, mDNS (до 30 с)…</div>`; try { this.scan = await api("/api/scan", {method:"POST", body: JSON.stringify({what: "all"})}); this.scan.at = new Date(); } catch (e) { this.scan = { error: e.message }; } this.draw(); },
   draw() { const b = $("#devBody"); if (!b) return; const s = stateCache || {targets: []}; const name = this.cur || targetName; const dev = s.targets.find(t => t.name === name); const f = this.facts[name];
     $("#devStamp").textContent = this.sub === "scan" ? (this.scan?.at ? "обновлено " + this.scan.at.toLocaleTimeString("ru", {hour:"2-digit", minute:"2-digit"}) : "") : (f?.at ? "собрано " + f.at.toLocaleTimeString("ru", {hour:"2-digit", minute:"2-digit"}) + (f.seconds ? ` · ${f.seconds} с` : "") : "");
     if (this.sub === "topology") {
-      const link = s.box?.link; const nodes = s.targets.map(t => `<div class="edge"><span>${t.type === "ssh" ? (link?.profile || "ssh") : t.type}</span></div><div class="node ${t.name === name ? "sel" : ""}" data-dev="${esc(t.name)}"><div class="n"><span class="dot ${this.facts[t.name] && !this.facts[t.name].error ? "ok" : this.facts[t.name]?.error ? "dng" : ""}"></span>${esc(t.name)}</div><div class="s">${esc(t.where)}</div></div>`).join("");
-      b.innerHTML = `<div class="legend"><span><span class="dot ok"></span> паспорт собран</span><span><span class="dot dng"></span> недоступно</span><span><span class="dot"></span> не проверялось</span> · клик по узлу — паспорт</div><div class="topo"><div class="node"><div class="n">${ICON.chip}${esc(s.box?.host || "GB10")}</div><div class="s">${esc(link ? (link.addr || link.state) : "Workbench")}</div></div>${nodes || `<div class="empty">устройств нет</div>`}</div>`;
-      b.querySelectorAll(".node[data-dev]").forEach(n => n.onclick = () => { this.sub = "passport"; this.load(n.dataset.dev); }); return; }
+      const link = s.box?.link;
+      // hardware inside an ssh device, from its passport sections (gpu / block / network / usb / serial)
+      const hw = t => { const f = this.facts[t.name]; if (!f || f.error || f.type !== "ssh") return ""; const sec = f.sections || {}; const chips = [];
+        (sec["gpu"] || "").split("\n").slice(1).filter(l => /,/.test(l)).forEach(l => { const c = l.split(","); chips.push(`<span class="pill" title="${esc(l.trim())}">${ICON.chip} ${esc(c[0].trim())}</span>`); });
+        (sec["block"] || "").split("\n").slice(1).filter(l => l.trim()).forEach(l => { const c = l.trim().split(/\s+/); chips.push(`<span class="pill" title="${esc(l.trim())}">${esc(c[0])} ${esc(c[1] || "")}${c[2] ? " · " + esc(c.slice(2, -2).join(" ")) : ""}</span>`); });
+        (sec["network"] || "").split("\n").filter(l => /^\S+\s+(UP|DOWN|UNKNOWN)\s+[0-9a-f:]{17}/.test(l)).forEach(l => { const c = l.trim().split(/\s+/); if (c[0] === "lo") return; chips.push(`<span class="pill ${c[1] === "UP" ? "ok" : ""}" title="${esc(l.trim())}">${ICON.net} ${esc(c[0])} ${esc(c[1].toLowerCase())}</span>`); });
+        (sec["usb"] || "").split("\n").filter(l => /ID /.test(l)).forEach(l => chips.push(`<span class="pill" title="${esc(l.trim())}">${ICON.usb} ${esc(l.replace(/.*ID [0-9a-f:]+\s*/, "").slice(0, 28))}</span>`));
+        (sec["serial"] || "").split("\n").filter(l => l.trim()).forEach(l => chips.push(`<span class="pill warn" title="${esc(l.trim())}">serial ${esc(l.trim().split(/\s|->/)[0].replace(/^usb-/, "").slice(0, 26))}</span>`));
+        return chips.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;max-width:260px">${chips.join("")}</div>` : `<div class="s" style="margin-top:4px">оборудование не найдено в паспорте</div>`; };
+      const nodes = s.targets.map(t => { const f = this.facts[t.name]; const st = f && !f.error ? "ok" : f?.error ? "dng" : "";
+        return `<div class="edge"><span>${t.type === "ssh" ? (link?.profile || "ssh") : t.type}</span></div><div class="node ${t.name === name ? "sel" : ""}" data-dev="${esc(t.name)}" style="min-width:170px"><div class="n"><span class="dot ${st}"></span>${esc(t.name)}<span class="grow"></span>${!f ? '<span class="pill">…</span>' : ""}</div><div class="s">${esc(t.where)}</div>${f?.error ? `<div class="err" style="font-size:11px;margin-top:4px">недоступно: ${esc(String(f.error).replace(/^\d+ /, "").slice(0, 90))}</div>` : hw(t)}</div>`; }).join("");
+      b.innerHTML = `<div class="legend"><span><span class="dot ok"></span> паспорт собран</span><span><span class="dot dng"></span> недоступно</span><span><span class="dot"></span> собирается</span> · клик по узлу — паспорт; внутри узла — оборудование станции (GPU, диски, сеть, USB, serial)</div><div class="topo" style="align-items:flex-start"><div class="node"><div class="n">${ICON.chip}${esc(s.box?.host || "GB10")}</div><div class="s">${esc(link ? (link.profile ? link.profile + " · " : "") + (link.addr || link.state) : "Workbench")}</div></div>${nodes || `<div class="empty">устройств нет</div>`}</div>`;
+      b.querySelectorAll(".node[data-dev]").forEach(n => n.onclick = () => { this.sub = "passport"; this.load(n.dataset.dev); });
+      this.loadAll(s.targets); return; }
     if (this.sub === "scan") { const sc = this.scan; if (!sc) { b.innerHTML = `<div class="empty">Что подключено к Workbench: USB, serial-порты, CAN, хосты на каждом линке, mDNS.<br><br><button type="button" class="sm" id="scanNow">Сканировать</button></div>`; $("#scanNow").onclick = () => this.doScan(); return; }
       if (sc.error) { b.innerHTML = `<div class="err">${esc(sc.error)}</div>`; return; }
       const icons = { "USB": ICON.usb, "Serial ports": ICON.chip, "CAN interfaces": ICON.net, "Network links": ICON.net }; b.innerHTML = `<div class="cards">` + Object.entries(sc.sections).map(([k, v]) => `<div class="card" style="grid-column:1/-1"><div class="ch">${icons[k] || ICON.box}${esc(k)}</div><pre>${esc(v || "—")}</pre></div>`).join("") + `</div>`; return; }
@@ -518,6 +540,7 @@ tabs.device = { title: "Устройство", cur: null, facts: {}, scan: null,
       <div class="card ${failed ? "dng" : ""}"><div class="ch">Службы<span class="grow"></span>${badge("", failed)}</div><pre>${esc(failed || "failed-юнитов нет")}</pre></div>
       <div class="card"><div class="ch">Вычисления</div><pre>${esc(cm)}</pre></div>
       <div class="card ${/N\/A|not found|failed/i.test(gpu) ? "warn" : ""}"><div class="ch">GPU</div><pre>${esc(gpu || "—")}</pre></div>
+      <div class="card"><div class="ch">Оборудование</div><pre>${esc([sec["block"], sec["pci"], sec["usb"] && "USB:\n" + sec["usb"], sec["serial"] && "serial:\n" + sec["serial"]].filter(Boolean).join("\n\n") || "—")}</pre></div>
       <div class="card" style="grid-column:1/-1"><div class="ch">Сеть</div><pre>${esc(net)}</pre></div>
       <div class="card ${/reboot required/i.test(reboot) || /\d+ upgradable/.test(dpkg) && !/upgradable: 0/.test(dpkg) ? "warn" : ""}"><div class="ch">Пакеты</div><pre>${esc(dpkg)}\n${esc(reboot)}</pre></div>
       <div class="card ${errs ? "warn" : ""}" style="grid-column:1/-1"><div class="ch">Ошибки журнала (эта загрузка)<span class="grow"></span>${badge("", errs)}</div><pre>${esc(errs || "—")}</pre></div></div>`; } };
