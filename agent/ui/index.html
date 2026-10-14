@@ -3,168 +3,223 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Spark Support</title>
+<title>Workbench</title>
 <link rel="manifest" href="/static/manifest.json">
 <link rel="icon" href="/static/icons/icon-48.png" type="image/png">
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-<meta name="theme-color" content="#ECECEE">
+<meta name="theme-color" content="#F3F4F6">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <script src="/static/lib/marked.umd.js"></script>
 <style>
-  /* ---- macOS-like palette (light default; dark via toggle) ---- */
-  :root { --bg:#F5F5F7; --bar:#ECECEE; --side:#F0F0F3; --panel:#FFFFFF; --ink:#1D1D1F; --muted:#6E6E73; --line:#D9D9DE; --line2:#E5E5EA;
-          --accent:#0A84FF; --accent-ink:#FFFFFF; --ok:#34C759; --warn:#FFCC00; --bad:#D70015; --good:#248A3D; --code:#ECECEE; --seg:#DEDEE2; --shadow:0 1px 2px rgba(0,0,0,.12); }
-  :root[data-theme="dark"] { --bg:#1C1C1E; --bar:#2A2A2D; --side:#232326; --panel:#2C2C2E; --ink:#F2F2F7; --muted:#98989D; --line:#3A3A3C; --line2:#3A3A3C;
-          --accent:#0A84FF; --code:#3A3A3C; --seg:#3A3A3C; --shadow:0 1px 2px rgba(0,0,0,.5); --bad:#FF453A; --good:#30D158; }
+  /* ---- Workbench UI v2 (docs/ui-v2-plan.md): neutral surfaces, colour only for status; light + dark ---- */
+  :root { --bg:#F3F4F6; --surf:#FFFFFF; --surf2:#F8FAFC; --bd:#E5E7EB; --bd2:#CBD5E1; --tx:#0F172A; --tx2:#475569; --tx3:#94A3B8;
+          --acc:#2563EB; --accS:#DBEAFE; --ok:#15803D; --okS:#DCFCE7; --warn:#B45309; --warnS:#FEF3C7; --dng:#B91C1C; --dngS:#FEE2E2;
+          --ink:#0B1220; --inkTx:#E2E8F0; --inkTx2:#94A3B8; --inkBd:#1F2937; --shadow:0 2px 8px rgba(15,23,42,.08);
+          --mode:#94A3B8; }
+  :root[data-theme="dark"] { --bg:#0B1220; --surf:#111827; --surf2:#0F172A; --bd:#1F2937; --bd2:#334155; --tx:#E2E8F0; --tx2:#94A3B8; --tx3:#64748B;
+          --accS:#1E3A8A; --okS:#14532D; --warnS:#78350F; --dngS:#7F1D1D; --ok:#4ADE80; --warn:#FBBF24; --dng:#F87171; --shadow:0 2px 8px rgba(0,0,0,.5); }
   * { box-sizing:border-box }
   html, body { height:100%; overflow:hidden }
-  body { margin:0; font:13px/1.45 -apple-system, "SF Pro Text", system-ui, "Helvetica Neue", "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased }
-  button { font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:5px 12px; cursor:pointer }
+  body { margin:0; font:13px/1.45 Inter, -apple-system, "SF Pro Text", system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--tx); -webkit-font-smoothing:antialiased }
+  button { font:inherit; color:var(--tx); background:var(--surf); border:1px solid var(--bd2); border-radius:8px; padding:6px 12px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; min-height:32px }
   button:hover { filter:brightness(.97) } button:disabled { opacity:.5; cursor:default }
-  button.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600 }
-  .mono { font-family:"SF Mono", Menlo, Consolas, monospace; font-size:12px }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; font-weight:500 }
+  button.danger { background:var(--dng); border-color:var(--dng); color:#fff; font-weight:500 }
+  button.ghost { background:transparent; border-color:transparent; color:var(--tx2) } button.ghost:hover { background:var(--surf2) }
+  button.sm { padding:3px 9px; min-height:26px; font-size:12px }
+  .mono { font-family:"JetBrains Mono", "SF Mono", Menlo, Consolas, monospace; font-size:12px }
+  svg.i { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0 }
+  .pill { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:500; background:var(--surf2); color:var(--tx2); border:1px solid var(--bd); white-space:nowrap }
+  .pill.ok { background:var(--okS); color:var(--ok); border-color:transparent } .pill.warn { background:var(--warnS); color:var(--warn); border-color:transparent }
+  .pill.dng { background:var(--dngS); color:var(--dng); border-color:transparent } .pill.acc { background:var(--accS); color:var(--acc); border-color:transparent }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--tx3); display:inline-block } .dot.ok { background:var(--ok) } .dot.warn { background:var(--warn) } .dot.dng { background:var(--dng) } .dot.acc { background:var(--acc) }
+
   .app { height:100vh; height:100dvh; display:flex; flex-direction:column }
+  /* status strip: the coloured top edge is the ONE global "we are on live hardware" signal */
+  .strip { height:44px; flex-shrink:0; display:flex; align-items:center; gap:10px; padding:0 12px; background:var(--surf); border-bottom:1px solid var(--bd); border-top:3px solid var(--mode); overflow:hidden }
+  .strip .brand { font-weight:600; font-size:14px; display:flex; align-items:center; gap:8px; margin-right:6px } .strip .brand img { width:22px; height:22px; border-radius:6px }
+  .strip .grow { flex:1 }
+  .strip .mem { display:flex; align-items:center; gap:6px; color:var(--tx2); font-size:11px } .strip .mem .bar { width:70px; height:6px; border-radius:3px; background:var(--bd); overflow:hidden } .strip .mem .bar i { display:block; height:100%; background:var(--acc) }
+  .strip select { font:inherit; font-size:12px; padding:4px 8px; border-radius:8px; border:1px solid var(--bd2); background:var(--surf); color:var(--tx) }
+  .strip .modesel { display:flex; align-items:center; gap:6px; padding:3px 8px; border:1px solid var(--bd2); border-radius:8px; font-size:12px }
+  .strip .modesel.plan { border-color:var(--acc); color:var(--acc) } .strip .modesel.auto { border-color:var(--warn); color:var(--warn) }
 
-  /* top bar */
-  .topbar { height:52px; flex-shrink:0; display:flex; align-items:center; gap:12px; padding:0 16px; background:var(--bar); border-bottom:1px solid var(--line) }
-  .topbar .brand { font-weight:600; font-size:14px; width:200px; display:flex; align-items:center; gap:8px }
-  .topbar .brand img { width:22px; height:22px; border-radius:6px }
-  .segment { display:flex; background:var(--seg); border-radius:8px; padding:2px; gap:2px }
-  .segment button { border:0; background:transparent; color:var(--muted); padding:4px 14px; border-radius:6px; box-shadow:none }
-  .segment button.active { background:var(--panel); color:var(--ink); font-weight:600; box-shadow:var(--shadow) }
-  .center { flex:1; display:flex; justify-content:center; align-items:center; gap:12px }
-  .right { display:flex; align-items:center; gap:10px; justify-content:flex-end; min-width:260px }
-  .chip { display:inline-flex; align-items:center; gap:6px; color:var(--muted); white-space:nowrap }
-  .dot { width:8px; height:8px; border-radius:50%; background:var(--muted) } .dot.ok { background:var(--ok) } .dot.bad { background:var(--bad) } .dot.warn { background:var(--warn) }
-  .busy { color:var(--muted) }
-  #profile button.loading { color:var(--accent) }
-  .q { max-width:760px; background:var(--panel); border-radius:12px; box-shadow:0 0 0 1px var(--line2), 0 4px 14px rgba(0,0,0,.06); padding:14px 16px; display:flex; gap:14px; align-items:flex-start }
-  .q .body2 { flex:1; display:flex; flex-direction:column; gap:10px; min-width:0 }
-  .q .title { font-weight:600; font-size:14px } .q .text { font-size:14px }
-  .q .opts { display:flex; flex-direction:column; gap:6px }
-  .q .opt { display:flex; gap:10px; align-items:flex-start; padding:8px 10px; border:1px solid var(--line); border-radius:8px; cursor:pointer; background:var(--panel) }
-  .q .opt:hover { background:var(--bg) } .q .opt.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) }
-  .q .opt b { font-weight:600 } .q .opt span { color:var(--muted); font-size:12px }
-  .q input[type=text] { font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink) }
-  .q .actions { display:flex; gap:8px; justify-content:flex-end }
-
-  /* body */
   .body { flex:1; min-height:0; display:flex }
-  aside { width:260px; flex-shrink:0; background:var(--side); border-right:1px solid var(--line); display:flex; flex-direction:column; padding:14px 10px; gap:4px; overflow:hidden }
-  aside .head { display:flex; justify-content:space-between; align-items:center; padding:0 6px 6px }
-  aside h2 { margin:0; font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em }
-  aside .head button { padding:3px 10px; border-radius:6px }
-  .sessions { flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; gap:2px }
-  .sessions a { display:block; padding:8px 10px; border-radius:8px; color:inherit; text-decoration:none }
-  .sessions a .t { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-  .sessions a .s { font-size:11px; color:var(--muted) }
-  .sessions a:hover { background:var(--seg) }
-  .sessions a.active { background:var(--accent); color:#fff } .sessions a.active .s { color:#fff; opacity:.85 }
-  .foot { padding:10px 10px 0; border-top:1px solid var(--line); font-size:11px; color:var(--muted); display:flex; flex-direction:column; gap:3px }
-  .foot b { color:var(--ink); font-weight:500 }
+  /* rail */
+  .rail { width:56px; flex-shrink:0; background:var(--surf); border-right:1px solid var(--bd); display:flex; flex-direction:column; align-items:center; padding:10px 0; gap:4px }
+  .rail button { width:40px; height:40px; padding:0; justify-content:center; border:0; background:transparent; color:var(--tx2); border-radius:10px } .rail button.active { background:var(--accS); color:var(--acc) } .rail .sp { flex:1 }
+  /* panel */
+  .panel { width:240px; flex-shrink:0; background:var(--surf); border-right:1px solid var(--bd); display:flex; flex-direction:column; min-height:0 }
+  .panel .head { display:flex; justify-content:space-between; align-items:center; padding:12px 12px 8px } .panel h2 { margin:0; font-size:14px; font-weight:600 }
+  .panel .search { margin:0 12px 8px; padding:6px 10px; border:1px solid var(--bd); border-radius:8px; font:inherit; background:var(--surf2); color:var(--tx); width:calc(100% - 24px) }
+  .panel .list { flex:1; min-height:0; overflow:auto; padding:0 8px 8px }
+  .panel .list a { display:block; padding:8px 10px; border-radius:8px; color:inherit; text-decoration:none; border:1px solid transparent }
+  .panel .list a:hover { background:var(--surf2) } .panel .list a.active { background:var(--surf2); border-color:var(--bd) }
+  .panel .list a .t { display:flex; gap:8px; align-items:flex-start; font-weight:500; line-height:1.3 } .panel .list a .t .dot { margin-top:5px } .panel .list a .s { font-size:11px; color:var(--tx3); margin-left:15px }
+  .panel .foot { border-top:1px solid var(--bd); padding:10px 12px; font-size:11px; color:var(--tx2) } .panel .foot .dev { display:flex; align-items:center; gap:8px; padding:4px 0 } .panel .foot b { color:var(--tx); font-weight:500 }
+  .panel .devcard { padding:10px 12px; border-bottom:1px solid var(--bd) } .panel .devcard b { font-weight:500 } .panel .devcard .s { font-size:11px; color:var(--tx3) }
 
-  main { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; position:relative }
-  #log { flex:1; min-height:0; overflow-y:auto; padding:20px 28px; display:flex; flex-direction:column; gap:14px }
-  .user { display:flex; justify-content:flex-end }
-  .user .b { max-width:640px; background:var(--accent); color:#fff; border-radius:16px 16px 4px 16px; padding:9px 14px; font-size:14px; white-space:pre-wrap; word-break:break-word }
-  .agent { max-width:760px; font-size:14px; word-break:break-word }
+  /* chat */
+  main { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; position:relative; background:var(--bg) }
+  .chat-head { height:40px; flex-shrink:0; display:flex; align-items:center; gap:10px; padding:0 16px; border-bottom:1px solid var(--bd); background:var(--surf); overflow:hidden }
+  .chat-head .title { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .chat-head .grow { flex:1 }
+  #log { flex:1; min-height:0; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:12px }
+  .msg .who { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--tx2); margin-bottom:4px } .msg .who b { color:var(--tx); font-weight:500 } .msg .who .av { width:22px; height:22px; border-radius:50%; background:var(--surf2); border:1px solid var(--bd); display:inline-flex; align-items:center; justify-content:center; color:var(--tx2) } .msg.user .who .av { background:var(--accS); color:var(--acc) }
+  .msg .content { max-width:820px; font-size:14px; word-break:break-word; display:flex; flex-direction:column; gap:8px }
+  .user .utext { white-space:pre-wrap; background:var(--surf); border:1px solid var(--bd); border-radius:10px; padding:8px 12px }
   .agent > :first-child { margin-top:0 } .agent > :last-child { margin-bottom:0 }
   .agent p { margin:0 0 .6em } .agent ul, .agent ol { margin:.3em 0 .6em; padding-left:1.4em } .agent li { margin:.15em 0 }
   .agent h1, .agent h2, .agent h3, .agent h4 { margin:.8em 0 .4em; line-height:1.25 } .agent h1 { font-size:1.2em } .agent h2 { font-size:1.1em } .agent h3 { font-size:1.02em }
-  .agent code { font-family:"SF Mono", Menlo, Consolas, monospace; font-size:12px; background:var(--code); padding:1px 5px; border-radius:4px }
-  .agent pre { background:var(--code); padding:8px 10px; border-radius:8px; overflow:auto; margin:.4em 0 .7em } .agent pre code { background:none; padding:0 }
-  .agent table { border-collapse:collapse; width:100%; max-width:100%; font-size:13px; background:var(--panel); border-radius:10px; box-shadow:0 0 0 1px var(--line2); overflow:hidden; margin:.4em 0 .8em; display:block; overflow-x:auto }
-  .agent th, .agent td { text-align:left; padding:7px 12px; border-bottom:1px solid var(--line2); vertical-align:top } .agent th { background:var(--bg); color:var(--muted); font-weight:600 }
-  .agent tr:last-child td { border-bottom:0 }
-  .agent blockquote { margin:.4em 0; padding:2px 12px; border-left:3px solid var(--line); color:var(--muted) }
-  .agent hr { border:0; border-top:1px solid var(--line2); margin:.8em 0 } .agent a { color:var(--accent) }
-  .meta { font-size:11px; color:var(--muted); margin-bottom:4px }
-  .err { color:var(--bad); font-size:13px }
-  details.tool { font-size:12px; color:var(--muted); padding-left:2px }
-  details.tool summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:8px } details.tool summary::-webkit-details-marker { display:none }
-  details.tool summary b { color:var(--ink); font-weight:500 }
-  details.tool pre { white-space:pre-wrap; margin:6px 0 0 22px; max-height:320px; overflow:auto; background:var(--code); border-radius:8px; padding:8px 10px; font-size:12px; color:var(--ink) }
-  details.reason { font-size:12px; color:var(--muted); padding-left:2px } details.reason summary { cursor:pointer } details.reason pre { white-space:pre-wrap; max-height:200px; overflow:auto; margin:6px 0 0; font:inherit }
-  .perm { max-width:760px; background:var(--panel); border-radius:12px; box-shadow:0 0 0 1px var(--line2), 0 4px 14px rgba(0,0,0,.06); padding:14px 16px; display:flex; gap:14px; align-items:flex-start }
-  .perm .body2 { flex:1; display:flex; flex-direction:column; gap:8px; min-width:0 }
-  .perm .title { font-weight:600; font-size:14px } .perm .why { color:var(--muted) }
-  .perm pre { font-family:"SF Mono", Menlo, Consolas, monospace; font-size:12px; background:var(--bg); border-radius:8px; padding:8px 10px; margin:0; white-space:pre-wrap; max-height:260px; overflow:auto; line-height:1.5 }
-  .perm .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:2px }
-  .perm { border-left:4px solid var(--warn) } .perm.actuation { border-left-color:var(--bad) } .perm.actuation .title { color:var(--bad) }
-  .perm .cls { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted) } .perm.actuation .cls { color:var(--bad); font-weight:600 }
-  .perm .rb { font-size:13px } .perm .rb b { font-weight:600 }
-  .perm.actuation button.primary { background:var(--bad); border-color:var(--bad) }
-  details.tool.actuation summary b { color:var(--bad) } details.tool.config summary b { color:#B25E00 }
-  #toBottom { position:absolute; right:28px; bottom:84px; z-index:2; border-radius:999px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,.2) }
-  form { padding:12px 28px 16px; display:flex; gap:10px; align-items:flex-end; border-top:1px solid var(--line2); background:var(--bar) }
-  form textarea { flex:1; font:inherit; font-size:14px; min-height:40px; max-height:200px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--panel); color:var(--ink); resize:vertical }
-  form .send { height:40px; padding:0 18px; border-radius:10px }
-  #mic { width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0 }
-  #mic.rec { background:var(--bad); border-color:var(--bad); animation:pulse 1s infinite } #mic.rec svg { stroke:#fff }
-  @keyframes pulse { 50% { opacity:.6 } }
-  #sttStatus, #hint { font-size:12px; color:var(--muted); padding:4px 28px; background:var(--bar) } #hint a { color:var(--accent) }
+  .agent code { font-family:"JetBrains Mono", Menlo, monospace; font-size:12px; background:var(--surf2); border:1px solid var(--bd); padding:1px 5px; border-radius:4px }
+  .agent pre { background:var(--surf2); border:1px solid var(--bd); padding:8px 10px; border-radius:8px; overflow:auto; margin:.4em 0 .7em } .agent pre code { background:none; border:0; padding:0 }
+  .agent table { border-collapse:collapse; font-size:13px; background:var(--surf); border-radius:8px; box-shadow:0 0 0 1px var(--bd); overflow:hidden; margin:.4em 0 .8em; display:block; overflow-x:auto; max-width:100% }
+  .agent th, .agent td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--bd); vertical-align:top } .agent th { background:var(--surf2); color:var(--tx2); font-weight:600 } .agent tr:last-child td { border-bottom:0 }
+  .agent blockquote { margin:.4em 0; padding:2px 12px; border-left:3px solid var(--bd2); color:var(--tx2) } .agent a { color:var(--acc) }
+  .err { color:var(--dng); font-size:13px }
+  details.reason { font-size:12px; color:var(--tx3) } details.reason summary { cursor:pointer; list-style:none } details.reason pre { white-space:pre-wrap; max-height:200px; overflow:auto; margin:6px 0 0; font:inherit; color:var(--tx2) }
+  /* tool block: left bar = action class */
+  .tool { border:1px solid var(--bd); border-left:3px solid var(--bd2); border-radius:8px; background:var(--surf); font-size:12px }
+  .tool.config { border-left-color:var(--warn) } .tool.actuation { border-left-color:var(--dng) } .tool.read { border-left-color:var(--acc) }
+  .tool summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px; padding:7px 10px; color:var(--tx2) } .tool summary::-webkit-details-marker { display:none }
+  .tool summary b { color:var(--tx); font-weight:500 } .tool summary .brief { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .tool pre { white-space:pre-wrap; margin:0; padding:8px 10px; border-top:1px solid var(--bd); max-height:320px; overflow:auto; background:var(--surf2); color:var(--tx); border-radius:0 0 8px 8px }
+  .chip-link { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:8px; background:var(--accS); color:var(--acc); font-size:12px; font-weight:500; cursor:pointer; border:0; width:fit-content }
+  /* approval card v2 */
+  .perm { border:1px solid var(--bd); border-left:4px solid var(--warn); border-radius:10px; background:var(--surf); box-shadow:var(--shadow); padding:12px 14px; display:flex; flex-direction:column; gap:8px; max-width:820px }
+  .perm.actuation { border-left-color:var(--dng) } .perm .cls { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--warn) } .perm.actuation .cls { color:var(--dng) }
+  .perm .title { font-weight:600; font-size:14px } .perm .why { color:var(--tx2) }
+  .perm pre { font-family:"JetBrains Mono", Menlo, monospace; font-size:12px; background:var(--surf2); border:1px solid var(--bd); border-radius:8px; padding:8px 10px; margin:0; white-space:pre-wrap; max-height:260px; overflow:auto }
+  .perm .rb { font-size:13px } .perm .rb b { font-weight:600 } .perm .effect { font-size:12px; color:var(--tx2) }
+  .perm .actions { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap } .perm .actions button { min-height:44px; padding:0 16px }
+  .hold { position:relative; overflow:hidden } .hold .fill { position:absolute; left:0; top:0; bottom:0; width:0; background:rgba(255,255,255,.35); transition:width .05s linear } .hold span { position:relative }
+  /* question card */
+  .q { border:1px solid var(--bd); border-left:4px solid var(--acc); border-radius:10px; background:var(--surf); box-shadow:var(--shadow); padding:12px 14px; display:flex; flex-direction:column; gap:8px; max-width:820px }
+  .q .title { font-weight:600; font-size:14px } .q .opts { display:flex; flex-direction:column; gap:6px }
+  .q .opt { display:flex; gap:10px; align-items:flex-start; padding:8px 10px; border:1px solid var(--bd); border-radius:8px; cursor:pointer } .q .opt span { color:var(--tx2); font-size:12px }
+  .q input[type=text] { font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--bd); background:var(--surf2); color:var(--tx) } .q .actions { display:flex; gap:8px; justify-content:flex-end }
+  #toBottom { position:absolute; right:20px; bottom:96px; z-index:2; border-radius:999px; box-shadow:var(--shadow) }
+  /* composer */
+  .composer { padding:10px 16px 12px; border-top:1px solid var(--bd); background:var(--surf) }
+  .composer form { display:flex; flex-direction:column; gap:6px; border:1px solid var(--bd2); border-radius:12px; padding:8px 10px; background:var(--surf) }
+  .composer textarea { font:inherit; font-size:14px; border:0; outline:0; resize:none; min-height:24px; max-height:160px; background:transparent; color:var(--tx) }
+  .composer .row { display:flex; align-items:center; gap:6px } .composer .row .grow { flex:1 }
+  .composer .row .pill { padding:3px 8px }
+  #mic.rec { background:var(--dng); border-color:var(--dng); color:#fff; animation:pulse 1s infinite } @keyframes pulse { 50% { opacity:.6 } }
+  #sttStatus, #hint { font-size:12px; color:var(--tx2); padding:2px 4px } #hint a { color:var(--acc) }
+  /* dock */
+  .dock { width:460px; flex-shrink:0; background:var(--surf); border-left:1px solid var(--bd); display:flex; flex-direction:column; min-height:0 }
+  .dock.wide { width:50% }
+  .tabs { display:flex; gap:2px; padding:6px 8px; border-bottom:1px solid var(--bd); overflow-x:auto; align-items:center }
+  .tabs button { border:0; background:transparent; color:var(--tx2); padding:5px 10px; border-radius:8px; min-height:30px; white-space:nowrap } .tabs button.active { background:var(--surf2); color:var(--tx); font-weight:600 }
+  .tabs button.dis { opacity:.45 } .tabs .sp { flex:1 }
+  .tabbar { display:flex; gap:6px; padding:8px 10px; border-bottom:1px solid var(--bd); align-items:center; flex-wrap:wrap } .tabbar .grow { flex:1 }
+  .tabbody { flex:1; min-height:0; overflow:auto; padding:10px }
+  /* traces */
+  .trace { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:8px; border-left:3px solid var(--bd2); margin-bottom:4px; background:var(--surf2); font-size:12px; cursor:pointer }
+  .trace.config { border-left-color:var(--warn) } .trace.actuation { border-left-color:var(--dng) } .trace.read { border-left-color:var(--acc) }
+  .trace b { font-weight:500 } .trace .brief { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--tx2) } .trace .t { color:var(--tx3) }
+  /* console */
+  .con { background:var(--ink); color:var(--inkTx); border-radius:10px; padding:8px; min-height:100%; font-family:"JetBrains Mono", Menlo, monospace; font-size:12px }
+  .con .blk { border-top:1px solid var(--inkBd); padding:8px 6px } .con .blk:first-child { border-top:0 }
+  .con .hd { display:flex; gap:8px; align-items:center; color:var(--inkTx2); margin-bottom:4px; font-family:Inter, system-ui, sans-serif } .con .hd .pill { background:var(--inkBd); border-color:transparent; color:var(--inkTx) }
+  .con .hd .pill.config { background:#78350F; color:#FDE68A } .con .hd .pill.actuation { background:#7F1D1D; color:#FECACA } .con .hd .pill.read { background:#1E3A8A; color:#BFDBFE } .con .hd .grow { flex:1 }
+  .con .cmd { color:#fff } .con pre { margin:4px 0 0; white-space:pre-wrap; color:var(--inkTx); max-height:260px; overflow:auto }
+  .con-in { display:flex; gap:6px; padding:8px 10px; border-top:1px solid var(--bd); align-items:center } .con-in input { flex:1; font-family:"JetBrains Mono", Menlo, monospace; font-size:12px; padding:7px 10px; border:1px solid var(--bd2); border-radius:8px; background:var(--surf2); color:var(--tx) }
+  .con-note { font-size:11px; color:var(--tx3); padding:0 10px 8px }
+  /* device */
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:8px }
+  .card { border:1px solid var(--bd); border-radius:10px; padding:10px 12px; background:var(--surf) } .card.warn { border-color:var(--warn) } .card.dng { border-color:var(--dng) }
+  .card .ch { display:flex; align-items:center; gap:6px; font-weight:600; margin-bottom:6px } .card .ch .grow { flex:1 }
+  .card .kv { display:flex; justify-content:space-between; gap:8px; font-size:12px; padding:2px 0 } .card .kv span:last-child { font-family:"JetBrains Mono", Menlo, monospace; color:var(--tx2); text-align:right; white-space:pre-wrap; word-break:break-all }
+  .card pre { margin:0; font-family:"JetBrains Mono", Menlo, monospace; font-size:11px; white-space:pre-wrap; color:var(--tx2); max-height:200px; overflow:auto }
+  .devhead { display:flex; align-items:center; gap:10px; margin-bottom:10px } .devhead .n { font-weight:600; font-size:15px } .devhead .s { color:var(--tx2); font-size:12px }
+  .topo { display:flex; align-items:stretch; gap:0; overflow-x:auto; padding:6px 0 } .topo .node { border:1px solid var(--bd); border-radius:10px; padding:8px 10px; min-width:130px; background:var(--surf); cursor:pointer } .topo .node.sel { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc) }
+  .topo .node .n { font-weight:600; display:flex; align-items:center; gap:6px } .topo .node .s { font-size:11px; color:var(--tx3); font-family:"JetBrains Mono", Menlo, monospace }
+  .topo .edge { width:36px; display:flex; align-items:center; justify-content:center; color:var(--tx3); font-size:10px; position:relative } .topo .edge::before { content:""; position:absolute; left:0; right:0; top:50%; border-top:1px dashed var(--bd2) } .topo .edge span { background:var(--surf); position:relative; padding:0 2px }
+  /* diagram */
+  .dia { background:var(--surf2); border:1px solid var(--bd); border-radius:10px; padding:10px; min-height:200px; overflow:auto } .dia svg { max-width:100% }
+  .dia-src { width:100%; min-height:140px; font-family:"JetBrains Mono", Menlo, monospace; font-size:12px; border:1px solid var(--bd2); border-radius:8px; padding:8px; background:var(--surf); color:var(--tx); resize:vertical }
+  .legend { display:flex; gap:12px; font-size:11px; color:var(--tx2); flex-wrap:wrap; padding:6px 0 }
+  .empty { color:var(--tx3); font-size:12px; padding:20px; text-align:center }
   /* audit view */
-  #audit { flex:1; min-height:0; overflow:auto; padding:20px 28px }
-  #audit table { border-collapse:collapse; width:100%; font-size:12px; background:var(--panel); border-radius:10px; box-shadow:0 0 0 1px var(--line2); overflow:hidden }
-  #audit th, #audit td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--line2); vertical-align:top } #audit th { background:var(--bg); color:var(--muted); font-weight:600 }
-  #audit td.c { font-family:"SF Mono", Menlo, Consolas, monospace; white-space:pre-wrap; word-break:break-all }
-  .rej { color:var(--bad) }
-  @media (max-width: 860px) { aside { display:none } .topbar .brand { width:auto } .right { min-width:0 } .chip span.l { display:none } }
+  #auditView table { border-collapse:collapse; width:100%; font-size:12px; background:var(--surf); border-radius:10px; box-shadow:0 0 0 1px var(--bd); overflow:hidden }
+  #auditView th, #auditView td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--bd); vertical-align:top } #auditView th { background:var(--surf2); color:var(--tx2); font-weight:600 }
+  #auditView td.c { font-family:"JetBrains Mono", Menlo, monospace; white-space:pre-wrap; word-break:break-all } .rej { color:var(--dng) }
+  .view { flex:1; min-height:0; overflow:auto; padding:16px 20px }
+  /* responsive */
+  .dockToggle { display:none }
+  @media (max-width: 1279px) { .dock { width:380px } .panel.hidden { display:none } }
+  @media (max-width: 1100px) { .panel { display:none } .panel.open { display:flex; position:absolute; left:56px; top:0; bottom:0; z-index:5; box-shadow:var(--shadow) } .dockToggle { display:inline-flex } .dock { display:none } .dock.open { display:flex; position:absolute; right:0; top:0; bottom:0; z-index:4; width:min(460px, 85vw) } .strip .mem, .strip .hostchip { display:none } }
+  @media (max-width: 767px) { .rail { display:none } .dock.open { left:0; width:auto; top:30%; border-top:1px solid var(--bd2); border-radius:14px 14px 0 0 } .strip .modelchip .l2 { display:none } .perm .actions button { flex:1 } }
 </style>
 </head>
 <body>
 <div class="app">
-  <div class="topbar">
-    <div class="brand"><img src="/static/icons/icon-48.png" alt="">Spark Support</div>
-    <div class="center">
-      <div class="segment">
-        <button type="button" id="tabChat" class="active">Сессия</button>
-        <button type="button" id="tabAudit">Аудит</button>
-      </div>
-      <span id="busy" class="busy" style="display:none">думает…</span>
-      <button type="button" id="abort" style="display:none">Стоп</button>
-      <button type="button" id="exportSession" title="Скачать сессию как Markdown">Экспорт</button>
+  <div class="strip" id="strip">
+    <div class="brand"><img src="/static/icons/icon-48.png" alt="">Workbench</div>
+    <button type="button" class="ghost sm dockToggle" id="panelToggle" title="Сессии">☰</button>
+    <span class="pill" id="devChip"><span class="dot"></span><span class="l">нет устройств</span></span>
+    <span class="pill" id="linkChip" title="Порт RJ45"><span class="dot"></span><span class="l">линк</span></span>
+    <span class="pill modelchip" id="llmChip"><span class="dot"></span><span class="l">LLM</span><span class="l2 mono"></span></span>
+    <span class="mem hostchip" id="mem" title="Память устройства Workbench"><span class="h mono">GB10</span><span class="bar"><i></i></span><span class="v mono"></span></span>
+    <span class="grow"></span>
+    <label class="modesel" id="modeSel" title="Режим одобрений: Спрашивать — карточка на каждое изменение; Авто-изменения — изменения настроек одобряются сами, актуация всё равно спрашивает; План — агент только диагностирует и предлагает, изменения отклоняются">
+      <span id="modeIcon"></span>
+      <select id="mode"><option value="ask">Спрашивать</option><option value="auto">Авто-изменения</option><option value="plan">План</option></select>
+    </label>
+    <button type="button" class="ghost sm" id="auditBtn" title="Журнал действий агента">аудит · <span id="auditN">0</span></button>
+    <div class="pill" id="profile" title="Профиль модели: fast — быстрый, deep — рассуждает дольше. Переключение 6–12 минут." style="padding:0; overflow:hidden; gap:0">
+      <button type="button" class="ghost sm" data-prof="fast" style="border-radius:0; min-height:24px">fast</button><button type="button" class="ghost sm" data-prof="deep" style="border-radius:0; min-height:24px">deep</button>
     </div>
-    <div class="right">
-      <div class="segment" id="profile" title="Профиль модели: fast — Qwen3.6 35B (быстро), deep — gpt-oss 120B (глубже рассуждает). Переключение занимает 5–8 минут.">
-        <button type="button" data-prof="fast">fast</button>
-        <button type="button" data-prof="deep">deep</button>
-      </div>
-      <span class="chip" id="llmChip"><span class="dot"></span><span class="l">LLM</span></span>
-      <span class="chip" id="targetChip"><span class="dot"></span><span class="l">цель</span></span>
-      <button type="button" id="installPwa" style="display:none" title="Установить как приложение">Установить</button>
-      <button type="button" id="theme" title="Светлая / тёмная тема" aria-label="Переключить тему" style="padding:5px 8px">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
-      </button>
-    </div>
+    <button type="button" class="ghost sm" id="theme" title="Светлая / тёмная тема" aria-label="Тема"><svg class="i" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+    <button type="button" class="ghost sm dockToggle" id="dockToggle" title="Панель вкладок">▣</button>
+    <button type="button" class="ghost sm" id="installPwa" style="display:none" title="Установить как приложение">Установить</button>
   </div>
   <div class="body">
-    <aside>
-      <div class="head"><h2>Сессии</h2><button type="button" id="newSession">+ Новая</button></div>
-      <div id="sessions" class="sessions"></div>
+    <nav class="rail" id="rail">
+      <button type="button" data-view="chat" class="active" title="Сессии"><svg class="i" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+      <button type="button" data-view="devices" title="Устройства"><svg class="i" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg></button>
+      <button type="button" data-view="audit" title="Аудит"><svg class="i" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg></button>
+      <span class="sp"></span>
+      <button type="button" data-view="about" title="О системе"><svg class="i" viewBox="0 0 24 24"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg></button>
+    </nav>
+    <aside class="panel" id="panel">
+      <div class="head"><h2>Сессии</h2><button type="button" class="sm" id="newSession">+ Новая</button></div>
+      <input class="search" id="sessSearch" placeholder="Поиск по сессиям">
+      <div class="list" id="sessions"></div>
       <div class="foot" id="foot"></div>
     </aside>
-    <main>
+    <main id="main">
+      <div class="chat-head" id="chatHead"><span class="title" id="chatTitle">—</span><span class="pill" id="chatStat" style="display:none"></span><span class="grow"></span><span class="pill" id="busy" style="display:none">думает…</span><button type="button" class="sm" id="abort" style="display:none">Стоп</button><button type="button" class="ghost sm" id="exportSession" title="Скачать сессию как Markdown">Экспорт</button></div>
       <div id="log"></div>
-      <button id="toBottom" type="button" style="display:none" title="К последним сообщениям">↓ вниз</button>
-      <div id="audit" style="display:none"></div>
-      <div id="hint" style="display:none"></div>
-      <div id="sttStatus" style="display:none"></div>
-      <form id="form">
-        <button type="button" id="mic" style="display:none" aria-label="Голосовой ввод" title="Голосовой ввод: нажми — говори — нажми ещё раз (или пробел, когда курсор не в поле)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
-        </button>
-        <textarea id="input" rows="1" placeholder="Опиши проблему или задачу… Enter — отправить"></textarea>
-        <button class="primary send" id="send" type="submit">Отправить</button>
-      </form>
+      <button id="toBottom" type="button" class="sm" style="display:none">↓ вниз</button>
+      <div id="auditView" class="view" style="display:none"></div>
+      <div id="devicesView" class="view" style="display:none"></div>
+      <div id="aboutView" class="view" style="display:none"></div>
+      <div class="composer" id="composer">
+        <div id="hint" style="display:none"></div><div id="sttStatus" style="display:none"></div>
+        <form id="form">
+          <textarea id="input" rows="1" placeholder="Опиши проблему или задачу… Enter — отправить, Shift+Enter — новая строка"></textarea>
+          <div class="row">
+            <button type="button" class="ghost sm" id="mic" style="display:none" aria-label="Голосовой ввод" title="Голосовой ввод: нажми — говори — нажми ещё раз (или пробел вне поля ввода)"><svg class="i" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></button>
+            <span class="pill mono" id="modelPill">—</span>
+            <span class="pill" id="targetPill" title="Устройство, к которому относится задача (агент выбирает по имени в тексте)">—</span>
+            <span class="grow"></span>
+            <button class="primary sm send" id="send" type="submit"><svg class="i" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg> Отправить</button>
+          </div>
+        </form>
+      </div>
     </main>
+    <section class="dock" id="dock">
+      <div class="tabs" id="tabs"></div>
+      <div id="tabHost" style="flex:1; min-height:0; display:flex; flex-direction:column"></div>
+    </section>
   </div>
 </div>
 <script>
 const $ = s => document.querySelector(s);
-let sid = location.hash.slice(1) || null, lastHTML = "", targetName = "", busySince = null;
-const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 marked.use({ gfm: true, breaks: true });
 const fmt = s => { try { return marked.parse(esc(s)); } catch { return esc(s).replace(/\n/g, "<br>"); } };
 const api = async (path, opt={}) => {
@@ -172,208 +227,380 @@ const api = async (path, opt={}) => {
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
   return r.json();
 };
+const store = { get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 const ICON = {
-  ok: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#34C759"/><path d="M4.5 8.2l2.3 2.3 4.7-4.7" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  err: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#D70015"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>',
-  run: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="#0A84FF" stroke-width="2" stroke-dasharray="20 18"><animateTransform attributeName="transform" type="rotate" from="0 8 8" to="360 8 8" dur="1s" repeatCount="indefinite"/></circle></svg>',
-  warn: '<svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true"><path d="M18 3l15 27H3z" fill="#FFCC00"/><path d="M18 13v8" stroke="#1D1D1F" stroke-width="2.4" stroke-linecap="round"/><circle cx="18" cy="25" r="1.5" fill="#1D1D1F"/></svg>',
+  ok: '<svg class="i" viewBox="0 0 24 24" style="color:var(--ok)"><path d="M20 6 9 17l-5-5"/></svg>',
+  err: '<svg class="i" viewBox="0 0 24 24" style="color:var(--dng)"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+  run: '<svg class="i" viewBox="0 0 24 24" style="color:var(--acc)"><circle cx="12" cy="12" r="9" stroke-dasharray="28 28"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/></circle></svg>',
+  warn: '<svg class="i" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+  bot: '<svg class="i" viewBox="0 0 24 24" style="width:13px;height:13px"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>',
+  user: '<svg class="i" viewBox="0 0 24 24" style="width:13px;height:13px"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  eye: '<svg class="i" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>',
+  pencil: '<svg class="i" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>',
+  zap: '<svg class="i" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>',
+  server: '<svg class="i" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>',
+  chip: '<svg class="i" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 11v2"/><path d="M10 11v2"/><path d="M14 11v2"/><path d="M18 11v2"/></svg>',
+  usb: '<svg class="i" viewBox="0 0 24 24"><circle cx="10" cy="7" r="1"/><circle cx="4" cy="20" r="1"/><path d="M4.7 19.3 19 5"/><path d="m21 3-3 1 2 2Z"/><path d="M9.26 7.68 5 12l2 5"/><path d="m10 14 5 2 3.5-3.5"/><path d="m18 12 1-1 1 1-1 1Z"/></svg>',
+  net: '<svg class="i" viewBox="0 0 24 24"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg>',
+  box: '<svg class="i" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>',
+  q: '<svg class="i" viewBox="0 0 24 24" style="color:var(--acc)"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>',
 };
 
-// ---------- theme ----------
-const applyTheme = t => { document.documentElement.dataset.theme = t; try { localStorage.setItem("theme", t); } catch {} };
-try { applyTheme(localStorage.getItem("theme") || "light"); } catch { applyTheme("light"); }
-$("#theme").onclick = () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
-
-// ---------- state / sidebar ----------
-async function refreshState() {
-  try {
-    const s = await api("/api/state");
-    renderProfile(s);
-    const llm = $("#llmChip"); llm.querySelector(".dot").className = "dot " + (s.llm.up ? "ok" : (s.profiles.fast === "activating" || s.profiles.deep === "activating" || switching) ? "warn" : "bad");
-    llm.querySelector(".l").textContent = s.llm.up ? (s.profiles.fast === "active" ? "Qwen3.6 35B" : "gpt-oss 120B") : (s.profiles.fast === "activating" || s.profiles.deep === "activating" || switching) ? "модель загружается…" : "LLM offline";
-    const t = $("#targetChip"); targetName = s.targets[0]?.name || "";
-    t.querySelector(".dot").className = "dot " + (s.targets.length ? "ok" : "warn");
-    t.querySelector(".l").textContent = s.targets.length ? s.targets.map(x => x.name + (x.type && x.type !== "ssh" ? ":" + x.type : "")).join(", ") : "нет устройств";
-    $("#sessions").innerHTML = s.sessions.map(x => `<a href="#${x.id}" class="${x.id===sid?"active":""}"><div class="t">${esc(x.title || x.id)}</div><div class="s">${x.updated ? new Date(x.updated).toLocaleString("ru", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"}) : ""}</div></a>`).join("");
-    $("#foot").innerHTML = (s.targets.length ? s.targets.map(x => `<div><b>${esc(x.name)}</b> · ${esc(x.type || "ssh")} · ${esc(x.where || x.user + "@" + x.host)}</div>`).join("") : `<div>Устройства не заданы: <span class="mono">support-ctl target add ws user@host</span> / <span class="mono">support-ctl device add …</span></div>`)
-      + `<div>Документация: ${s.docs.files} файлов, ~${s.docs.tokens_est.toLocaleString("ru")} токенов</div>`;
-    if (!sid && s.sessions.length) location.hash = s.sessions[0].id;
-  } catch (e) { $("#llmChip .l").textContent = /503/.test(e.message) ? "агент недоступен" : "ошибка: " + e.message.slice(0, 40); $("#llmChip .dot").className = "dot bad"; }
-}
-
-// ---------- chat rendering ----------
+// ---------- action classes (mirror of support_ui.py / target_host.py) ----------
 const CLASS = { actuation: ["device_actuate","device_recover","reboot_and_wait"], config: ["run_change","write_file","device_act","workbench_run"] };
 const toolClass = t => CLASS.actuation.includes(t) ? "actuation" : CLASS.config.includes(t) ? "config" : "read";
+const CLASS_RU = { read: "чтение", config: "изменение", actuation: "актуация" };
 const WHAT = { run_change: "выполнить команду", write_file: "изменить файл", reboot_and_wait: "перезагрузить", device_act: "изменить настройку",
                device_actuate: "воздействовать на оборудование", device_recover: "сбросить / перезапустить", workbench_run: "запустить свой скрипт в песочнице" };
+const EFFECT = { run_change: "Команда выполнится на устройстве от имени support-agent (sudo). Вывод вернётся агенту.",
+                 write_file: "Файл будет перезаписан; рядом останется копия .bak-ДАТА.", reboot_and_wait: "Устройство уйдёт в перезагрузку; агент дождётся возврата SSH.",
+                 device_act: "Запрос изменит настройку на устройстве через его API.", device_actuate: "Воздействие дойдёт до оборудования сразу: шина, регистр, консоль платы, питание или прошивка.",
+                 device_recover: "Сброс или перезапуск: плата/интерфейс/устройство на несколько секунд выпадет из работы.", workbench_run: "Скрипт выполнится в контейнере без GPU и без файлов Workbench; из устройств доступны только перечисленные." };
+
+// ---------- global state ----------
+let sid = location.hash.slice(1) || null, lastHTML = "", lastData = null, busySince = null, stateCache = null, targetName = "";
+const applyTheme = t => { document.documentElement.dataset.theme = t; store.set("theme", t); document.querySelector('meta[name=theme-color]').content = t === "dark" ? "#111827" : "#F3F4F6"; };
+applyTheme(store.get("theme", "light"));
+$("#theme").onclick = () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+
+// ---------- approval mode (graduated autonomy as a UI element, not a setting) ----------
+let mode = store.get("mode", "ask");
+$("#mode").value = mode;
+function applyMode() {
+  $("#modeSel").className = "modesel " + mode;
+  $("#modeIcon").innerHTML = mode === "plan" ? ICON.eye : mode === "auto" ? ICON.pencil : ICON.warn;
+  setEdge();
+}
+$("#mode").onchange = () => { mode = $("#mode").value; store.set("mode", mode); applyMode(); poll(); };
+function setEdge() {
+  // grey: no device · blue: connected, reading only · amber: changes allowed/automatic · red: actuation requested
+  const pendingAct = (lastData?.pending || []).some(p => toolClass(permTool(p, {})) === "actuation");
+  const c = pendingAct ? "var(--dng)" : mode === "auto" ? "var(--warn)" : (stateCache?.targets?.length ? "var(--acc)" : "var(--tx3)");
+  document.documentElement.style.setProperty("--mode", c);
+}
+applyMode();
+
+// ---------- state / strip / panel ----------
+async function refreshState() {
+  try {
+    const s = await api("/api/state"); stateCache = s;
+    renderProfile(s);
+    const llm = $("#llmChip"); const up = s.llm.up, activating = s.profiles.fast === "activating" || s.profiles.deep === "activating" || switching;
+    llm.querySelector(".dot").className = "dot " + (up ? "ok" : activating ? "warn" : "dng");
+    const prof = s.profiles.fast === "active" ? "fast" : s.profiles.deep === "active" ? "deep" : null;
+    llm.querySelector(".l").textContent = up ? prof : activating ? "модель загружается…" : "LLM offline";
+    llm.querySelector(".l2").textContent = up && prof ? (s.models?.[prof] || "") : "";
+    $("#modelPill").textContent = up && prof ? `${prof} · ${(s.models?.[prof] || "").replace(/-A3B.*|-NVFP4|-MXFP4/g, "")}` : "LLM offline";
+    const d = $("#devChip"); targetName = s.targets[0]?.name || "";
+    d.querySelector(".dot").className = "dot " + (s.targets.length ? "ok" : "warn");
+    d.querySelector(".l").textContent = s.targets.length ? s.targets.map(x => x.name + (x.type !== "ssh" ? ":" + x.type : "")).join(" · ") : "нет устройств";
+    $("#targetPill").textContent = s.targets.length ? s.targets.map(x => x.name).join(", ") : "нет устройств";
+    const lk = $("#linkChip"), L = s.box?.link;
+    if (L) { lk.style.display = ""; lk.querySelector(".dot").className = "dot " + (/connected/.test(L.state) && !/disconnected/.test(L.state) ? "ok" : ""); lk.querySelector(".l").textContent = (L.profile || "RJ45") + (L.addr ? " · " + L.addr.replace(/\/\d+$/, "") : (/disconnected|unavailable/.test(L.state) ? " · нет кабеля" : "")); } else lk.style.display = "none";
+    if (s.box?.mem_total_gib) { $("#mem .bar i").style.width = Math.round(100 * s.box.mem_used_gib / s.box.mem_total_gib) + "%"; $("#mem .v").textContent = `${Math.round(s.box.mem_used_gib)} / ${Math.round(s.box.mem_total_gib)} ГиБ`; $("#mem .h").textContent = s.box.host || "GB10"; }
+    renderSessions(s);
+    $("#foot").innerHTML = `<div style="font-size:11px;color:var(--tx3);margin-bottom:4px">Устройства</div>` + (s.targets.length ? s.targets.map(x => `<div class="dev">${x.type === "ssh" ? ICON.server : x.type === "can" ? ICON.net : x.type === "http" ? ICON.box : ICON.chip}<div><b>${esc(x.name)}</b><div>${esc(x.type)} · ${esc(x.where)}</div></div></div>`).join("") : `<div>Не задано: <span class="mono">support-ctl target add</span> / <span class="mono">device add</span></div>`)
+      + `<div style="margin-top:6px">Документация: ${s.docs.files} файлов, ~${s.docs.tokens_est.toLocaleString("ru")} токенов</div>`;
+    if (!sid && s.sessions.length) location.hash = s.sessions[0].id;
+    setEdge();
+  } catch (e) { $("#llmChip .l").textContent = /503/.test(e.message) ? "агент недоступен" : "ошибка"; $("#llmChip .dot").className = "dot dng"; }
+}
+function renderSessions(s) {
+  const q = ($("#sessSearch").value || "").toLowerCase();
+  $("#sessions").innerHTML = s.sessions.filter(x => !q || (x.title || "").toLowerCase().includes(q)).map(x => `<a href="#${x.id}" class="${x.id===sid?"active":""}"><div class="t"><span class="dot ${x.busy ? "acc" : "ok"}"></span><span>${esc(x.title || x.id)}</span></div><div class="s">${x.updated ? new Date(x.updated).toLocaleString("ru", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"}) : ""}${x.busy ? " · в работе" : ""}</div></a>`).join("");
+  const cur = s.sessions.find(x => x.id === sid); if (cur) $("#chatTitle").textContent = cur.title || cur.id;
+}
+$("#sessSearch").oninput = () => stateCache && renderSessions(stateCache);
+
+// ---------- chat rendering ----------
+function permTool(p, calls) {
+  const call = calls[p.tool?.callID] || {};
+  return (call.tool || p.metadata?.tool || p.tool?.name || p.permission || "").replace(/^target-host_/, "");
+}
 function renderPerm(p, calls) {
   const call = calls[p.tool?.callID] || {};
   const i = Object.keys(p.metadata?.input || {}).length ? p.metadata.input : (call.input || p.metadata || {});
-  const tool = (call.tool || p.metadata?.tool || p.tool?.name || p.permission || "").replace(/^target-host_/, "");
-  const cls = toolClass(tool), what = WHAT[tool] || tool;
+  const tool = permTool(p, calls), cls = toolClass(tool), what = WHAT[tool] || tool;
   const where = i.device || i.target || (tool === "workbench_run" ? "Workbench (песочница)" : targetName || "цели");
   let body;
   if (tool === "workbench_run") body = `# ${i.language || "python"} · сеть: ${i.network || "none"}${i.devices ? " · устройства: " + i.devices : ""}${i.usb ? " · USB" : ""}\n${i.script || ""}`;
-  else if (i.cmd) body = i.cmd;
-  else if (i.action !== undefined) body = i.action;
-  else if (i.path) body = `${i.path}\n${i.content !== undefined ? "--- содержимое ---\n" + i.content : ""}`;
-  else body = JSON.stringify(i, null, 1);
-  const clsLabel = cls === "actuation" ? "Актуация — одобряется каждый раз" : cls === "config" ? "Изменение" : "";
-  return `<div class="perm ${cls}" data-pid="${p.id}" data-cls="${cls}">${ICON.warn}<div class="body2">
-    ${clsLabel ? `<div class="cls">${clsLabel}</div>` : ""}
+  else if (i.cmd) body = i.cmd; else if (i.action !== undefined) body = i.action;
+  else if (i.path) body = `${i.path}\n${i.content !== undefined ? "--- содержимое ---\n" + i.content : ""}`; else body = JSON.stringify(i, null, 1);
+  const effect = EFFECT[tool] || "";
+  return `<div class="perm ${cls}" data-pid="${p.id}" data-cls="${cls}" data-tool="${esc(tool)}">
+    <div class="cls">${cls === "actuation" ? "Актуация — одобряется каждый раз, удержите кнопку" : "Изменение"}${cls === "config" && mode === "auto" ? " · авто-режим" : ""}</div>
     <div class="title">Агент хочет ${esc(what)} · ${esc(where)}</div>
     ${i.reason ? `<div class="why">Причина: ${esc(i.reason)}</div>` : ""}
     <pre>${esc(body)}</pre>
-    ${i.rollback ? `<div class="rb"><b>Откат:</b> ${esc(i.rollback)}</div>` : cls === "actuation" ? `<div class="rb err">План отката не указан</div>` : ""}
+    ${effect ? `<div class="effect">Ожидаемый эффект: ${esc(effect)}</div>` : ""}
+    ${i.rollback ? `<div class="rb"><b>Откат:</b> ${esc(i.rollback)}</div>` : cls === "actuation" ? `<div class="rb err">План отката не указан — отклоните и спросите агента, как он откатит.</div>` : ""}
     <div class="actions">
       <button type="button" data-resp="reject">Отклонить</button>
-      ${cls === "actuation" ? "" : `<button type="button" data-resp="always">Разрешить всегда</button>`}
-      <button type="button" class="primary" data-resp="once">${cls === "actuation" ? "Разрешить этот раз" : "Разрешить"}</button>
-    </div></div></div>`;
+      ${cls === "actuation" ? `<button type="button" class="danger hold" data-resp="once" data-hold="1"><span class="fill"></span><span>Удерживать — разрешить</span></button>`
+        : `<button type="button" data-resp="always" title="Не спрашивать для этого инструмента до конца сессии">Разрешить класс для этой цели</button><button type="button" class="primary" data-resp="once">Разрешить</button>`}
+    </div></div>`;
 }
-const ICON_Q = '<svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="#0A84FF"/><path d="M13.5 14.5a4.5 4.5 0 1 1 6.3 4.1c-1.2.6-1.8 1.3-1.8 2.6" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round"/><circle cx="18" cy="25.5" r="1.6" fill="#fff"/></svg>';
 function renderQuestion(q) {
-  // one card per request; several questions inside are rare — render them stacked, answers collected in order
   const blocks = q.questions.map((qi, n) => {
     const opts = (qi.options || []).map((o, k) => `<label class="opt" data-q="${n}" data-k="${k}"><input type="${qi.multiple ? "checkbox" : "radio"}" name="q${q.id}_${n}" value="${esc(o.label)}" style="margin-top:3px"><div><b>${esc(o.label)}</b><br><span>${esc(o.description || "")}</span></div></label>`).join("");
     const custom = qi.custom ? `<input type="text" data-custom="${n}" placeholder="Свой ответ…">` : "";
-    return `<div class="title">${esc(qi.header || "Вопрос")}</div><div class="text">${fmt(qi.question || "")}</div><div class="opts">${opts}${custom}</div>`;
+    return `<div class="title">${esc(qi.header || "Вопрос")}</div><div class="agent">${fmt(qi.question || "")}</div><div class="opts">${opts}${custom}</div>`;
   }).join("<hr>");
-  return `<div class="q" data-qid="${q.id}">${ICON_Q}<div class="body2">${blocks}
-    <div class="actions"><button type="button" data-qact="reject">Отклонить</button><button type="button" class="primary" data-qact="reply">Ответить</button></div></div></div>`;
+  return `<div class="q" data-qid="${q.id}">${blocks}<div class="actions"><button type="button" data-qact="reject">Отклонить</button><button type="button" class="primary" data-qact="reply">Ответить</button></div></div>`;
+}
+const TAB_FOR = { collect_facts: "device", observe: "device", scan: "device", run_readonly: "console", run_change: "console", device_act: "console", device_actuate: "console", workbench_run: "console", read_file: "console" };
+function renderTool(p, idx) {
+  const icon = p.status === "completed" ? ICON.ok : p.status === "error" ? ICON.err : ICON.run;
+  const dur = p.time?.start && p.time?.end ? `${((p.time.end - p.time.start)/1000).toFixed(1)} с` : "";
+  const name = (p.tool || "").replace(/^target-host_/, ""), cls = toolClass(name);
+  const brief = p.input?.cmd || p.input?.path || p.input?.action || p.input?.query || (p.input?.script ? (p.input.language || "python") + ": " + p.input.script.split("\n")[0] : "") || p.input?.what || "";
+  const dev = p.input?.device || p.input?.target;
+  const rc = (p.output || "").match(/^rc=(\d+)/); const rcPill = rc ? `<span class="pill ${rc[1]==="0"?"ok":"dng"} mono">rc=${rc[1]}</span>` : (p.output || "").startsWith("REJECTED") ? `<span class="pill dng">отклонено защитой</span>` : "";
+  return `<details class="tool ${cls}" id="tool-${p.callID || idx}"><summary>${icon}<b>${esc(name)}</b>${dev ? `<span class="pill">${esc(dev)}</span>` : ""}<span class="brief mono">${esc(brief)}</span>${rcPill}<span style="color:var(--tx3)">${dur}</span></summary><pre>${esc(p.output || "(нет вывода)")}</pre></details>`;
 }
 function renderMessages(d) {
+  lastData = d;
   const calls = {};
   d.messages.forEach(m => m.parts.forEach(p => { if (p.type === "tool" && p.callID) calls[p.callID] = p; }));
+  const openTabs = new Set(); let hasMermaid = false; let i = 0;
   const html = d.messages.map(m => {
     const time = m.time ? new Date(m.time).toLocaleTimeString("ru", {hour:"2-digit", minute:"2-digit"}) : "";
     if (m.role === "user") {
       const text = m.parts.filter(p => p.type === "text").map(p => p.text).join("\n");
-      return `<div class="user"><div><div class="meta" style="text-align:right">${time}</div><div class="b">${esc(text)}</div></div></div>`;
+      return `<div class="msg user"><div class="who"><span class="av">${ICON.user}</span><b>Оператор</b> ${time}</div><div class="content"><div class="utext">${esc(text)}</div></div></div>`;
     }
     const parts = m.parts.map(p => {
-      if (p.type === "text") return `<div class="agent">${fmt(p.text)}</div>`;
-      if (p.type === "reasoning") return `<details class="reason"><summary>ход мыслей ›</summary><pre>${esc(p.text)}</pre></details>`;
-      if (p.type === "tool") {
-        const icon = p.status === "completed" ? ICON.ok : p.status === "error" ? ICON.err : ICON.run;
-        const dur = p.time?.start && p.time?.end ? ` · ${((p.time.end - p.time.start)/1000).toFixed(1)} с` : "";
-        const name = (p.tool || "").replace(/^target-host_/, "");
-        const brief = p.input?.cmd || p.input?.path || p.input?.action || p.input?.query || (p.input?.script ? (p.input.language || "python") + ": " + p.input.script.split("\n")[0] : "") || p.input?.what || "";
-        const dev = p.input?.device || p.input?.target;
-        return `<details class="tool ${toolClass(name)}"><summary>${icon}<span><b>${esc(name)}</b>${dev ? " · " + esc(dev) : ""}${dur}${brief ? ` · <span class="mono">${esc(brief).slice(0, 90)}</span>` : ""}</span></summary><pre>${esc(p.output || "(нет вывода)")}</pre></details>`;
-      }
+      if (p.type === "text") { if (/```mermaid/.test(p.text)) hasMermaid = true; return `<div class="agent">${fmt(p.text)}</div>`; }
+      if (p.type === "reasoning") return p.text ? `<details class="reason"><summary>ход мыслей ›</summary><pre>${esc(p.text)}</pre></details>` : "";
+      if (p.type === "tool") { const n = (p.tool || "").replace(/^target-host_/, ""); if (TAB_FOR[n]) openTabs.add(TAB_FOR[n]); return renderTool(p, i++); }
       return "";
     }).join("");
     const err = m.error ? `<div class="err">Ошибка: ${esc(m.error)}</div>` : "";
-    return `<div><div class="meta">Агент · ${time}</div><div style="display:flex;flex-direction:column;gap:8px">${parts}${err}</div></div>`;
+    const prof = m.modelID ? `<span class="pill mono">${esc(m.modelID)}</span>` : "";
+    return `<div class="msg"><div class="who"><span class="av">${ICON.bot}</span><b>Агент</b> ${time} ${prof}</div><div class="content">${parts}${err}</div></div>`;
   }).join("") + d.pending.map(p => renderPerm(p, calls)).join("") + (d.questions || []).map(renderQuestion).join("");
   if (html !== lastHTML) {
     $("#log").innerHTML = html; lastHTML = html;
     if (stickBottom) scrollToBottom();
+    if (hasMermaid) tabs.diagram.fromSession(d);
   }
-  $("#busy").style.display = d.busy ? "" : "none";
-  $("#abort").style.display = d.busy ? "" : "none";
-  // watchdog: a turn that has produced nothing visible for a long time is usually a runaway reasoning loop
+  $("#busy").style.display = d.busy ? "" : "none"; $("#abort").style.display = d.busy ? "" : "none";
   if (d.busy) { if (!busySince) busySince = Date.now(); const mins = Math.floor((Date.now() - busySince) / 60000);
-    $("#busy").textContent = mins >= 3 ? `думает уже ${mins} мин — если ничего не появляется, нажмите Стоп и переформулируйте` : "думает…"; }
-  else busySince = null;
+    $("#busy").textContent = mins >= 3 ? `думает уже ${mins} мин — нажмите Стоп и переформулируйте` : "думает…"; } else busySince = null;
+  const nTools = d.messages.reduce((a, m) => a + m.parts.filter(p => p.type === "tool").length, 0);
+  const nChange = d.messages.reduce((a, m) => a + m.parts.filter(p => p.type === "tool" && toolClass((p.tool||"").replace(/^target-host_/, "")) !== "read").length, 0);
+  $("#chatStat").style.display = nTools ? "" : "none"; $("#chatStat").textContent = `${nTools} шагов · ${nChange} изменений`;
   $("#send").disabled = !sid;
+  setEdge();
+  autoMode(d, calls);
+  if (activeTab === "traces" || activeTab === "console") tabs[activeTab].render(d);
+}
+// graduated autonomy: auto = approve CONFIG class automatically (actuation still asks); plan = reject every change
+async function autoMode(d, calls) {
+  for (const p of d.pending) {
+    const cls = toolClass(permTool(p, calls)); if (cls === "read") continue;
+    if (mode === "auto" && cls === "config") { await api(`/api/session/${sid}/permission/${p.id}`, {method:"POST", body: JSON.stringify({response: "once"})}); }
+    if (mode === "plan") { await api(`/api/session/${sid}/permission/${p.id}`, {method:"POST", body: JSON.stringify({response: "reject"})}); }
+  }
 }
 
-// ---------- auto-scroll ----------
-let stickBottom = true;
-const log = $("#log");
+// ---------- scrolling / polling ----------
+let stickBottom = true; const log = $("#log");
 const scrollToBottom = () => { log.scrollTop = log.scrollHeight; stickBottom = true; $("#toBottom").style.display = "none"; };
 log.addEventListener("scroll", () => { const near = log.scrollTop + log.clientHeight >= log.scrollHeight - 60; stickBottom = near; $("#toBottom").style.display = near ? "none" : ""; });
 $("#toBottom").onclick = scrollToBottom;
-
 async function poll() {
   if (!sid || view !== "chat") return;
   try { renderMessages(await api(`/api/session/${sid}`)); }
   catch (e) { $("#log").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 function selectSession(id) {
-  sid = id; lastHTML = ""; stickBottom = true; busySince = null; $("#log").innerHTML = "";   // clean slate until the session's own messages arrive
-  document.querySelectorAll(".sessions a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#"+id));
-  showView("chat"); poll();
+  sid = id; lastHTML = ""; lastData = null; stickBottom = true; busySince = null; $("#log").innerHTML = "";
+  document.querySelectorAll("#sessions a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#"+id));
+  showView("chat"); poll(); if (stateCache) renderSessions(stateCache);
 }
 
-// ---------- views: chat / audit ----------
+// ---------- views (rail) ----------
 let view = "chat";
 function showView(v) {
   view = v;
-  $("#tabChat").classList.toggle("active", v === "chat"); $("#tabAudit").classList.toggle("active", v === "audit");
-  $("#log").style.display = v === "chat" ? "" : "none"; $("#form").style.display = v === "chat" ? "" : "none";
-  $("#audit").style.display = v === "audit" ? "" : "none";
-  if (v === "audit") loadAudit();
+  document.querySelectorAll("#rail button").forEach(b => b.classList.toggle("active", b.dataset.view === v));
+  for (const [k, el] of Object.entries({chat: "#log", audit: "#auditView", devices: "#devicesView", about: "#aboutView"})) $(el).style.display = v === k ? "" : "none";
+  $("#composer").style.display = v === "chat" ? "" : "none"; $("#chatHead").style.display = v === "chat" ? "" : "none";
+  if (v === "audit") loadAudit(); if (v === "devices") loadDevices(); if (v === "about") loadAbout();
 }
+document.querySelectorAll("#rail button").forEach(b => b.onclick = () => showView(b.dataset.view));
+$("#auditBtn").onclick = () => showView("audit");
 async function loadAudit() {
   try {
-    const a = await api("/api/audit?n=200");
-    $("#audit").innerHTML = `<div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px"><a class="btn" href="/api/audit/export?format=csv" download><button type="button">Экспорт CSV</button></a><a href="/api/audit/export" download><button type="button">Экспорт JSONL</button></a></div><table><thead><tr><th>Время</th><th>Цель</th><th>Инструмент</th><th>Команда / файл</th><th>Результат</th></tr></thead><tbody>` +
-      a.map(e => `<tr><td>${esc((e.ts||"").replace("T"," ").slice(0,19))}</td><td>${esc(e.target||"")}</td><td>${esc(e.tool||"")}</td><td class="c">${esc(e.cmd||e.path||"")}${e.reason ? `<div style="color:var(--muted)">${esc(e.reason)}</div>` : ""}</td><td>${e.rejected ? '<span class="rej">отклонено защитой</span>' : e.rc != null ? "rc=" + e.rc : ""}</td></tr>`).join("") +
-      `</tbody></table>`;
-  } catch (e) { $("#audit").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+    const a = await api("/api/audit?n=300"); $("#auditN").textContent = a.length;
+    $("#auditView").innerHTML = `<div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-bottom:10px"><b>Журнал действий агента и оператора</b><span><a href="/api/audit/export?format=csv" download><button type="button" class="sm">Экспорт CSV</button></a> <a href="/api/audit/export" download><button type="button" class="sm">Экспорт JSONL</button></a></span></div><table><thead><tr><th>Время</th><th>Устройство</th><th>Инструмент</th><th>Класс</th><th>Команда / действие</th><th>Результат</th></tr></thead><tbody>` +
+      a.map(e => `<tr><td>${esc((e.ts||"").replace("T"," ").slice(0,19))}</td><td>${esc(e.target||"")}</td><td>${esc(e.tool||"")}${e.by ? ` <span class="pill">${esc(e.by)}</span>` : ""}</td><td>${e.class ? `<span class="pill ${e.class==="actuation"?"dng":"warn"}">${esc(CLASS_RU[e.class]||e.class)}</span>` : ""}</td><td class="c">${esc(e.cmd||e.path||e.action||e.query||"")}${e.reason ? `<div style="color:var(--tx3)">${esc(e.reason)}</div>` : ""}${e.rollback ? `<div style="color:var(--tx3)">откат: ${esc(e.rollback)}</div>` : ""}</td><td>${e.rejected ? '<span class="rej">отклонено защитой</span>' : e.rc != null ? "rc=" + e.rc : ""}</td></tr>`).join("") + `</tbody></table>`;
+  } catch (e) { $("#auditView").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
-$("#tabChat").onclick = () => showView("chat"); $("#tabAudit").onclick = () => showView("audit");
-$("#exportSession").onclick = () => { if (sid) location.href = `/api/session/${sid}/export`; };
+async function loadDevices() {
+  const s = stateCache || await api("/api/state");
+  $("#devicesView").innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>Устройства</b><span class="pill">добавить: <span class="mono">support-ctl target add</span> · <span class="mono">device add</span></span></div><div class="cards">` +
+    (s.targets.map(x => `<div class="card"><div class="ch">${x.type === "ssh" ? ICON.server : x.type === "can" ? ICON.net : x.type === "http" ? ICON.box : ICON.chip}${esc(x.name)}<span class="grow"></span><span class="pill">${esc(x.type)}</span></div><div class="kv"><span>адрес</span><span>${esc(x.where)}</span></div><div style="margin-top:8px;display:flex;gap:6px"><button type="button" class="sm" data-dev="${esc(x.name)}">Паспорт</button><a href="/api/device/${esc(x.name)}/report" download><button type="button" class="sm ghost">Отчёт</button></a></div></div>`).join("") || `<div class="empty">Устройств нет</div>`) + `</div>`;
+  $("#devicesView").querySelectorAll("button[data-dev]").forEach(b => b.onclick = () => { openTab("device"); tabs.device.load(b.dataset.dev); showView("chat"); });
+}
+async function loadAbout() {
+  let f = {}; try { f = await api("/api/features"); } catch {}
+  const s = stateCache || {};
+  $("#aboutView").innerHTML = `<b>Workbench — UI v2</b><div style="margin-top:8px" class="cards">
+    <div class="card"><div class="ch">Устройство</div><div class="kv"><span>имя</span><span>${esc(s.box?.host||"")}</span></div><div class="kv"><span>память</span><span>${s.box?.mem_used_gib ?? "?"} / ${s.box?.mem_total_gib ?? "?"} ГиБ</span></div><div class="kv"><span>RJ45</span><span>${esc(s.box?.link ? s.box.link.profile + " " + s.box.link.state : "—")}</span></div></div>
+    <div class="card"><div class="ch">Модели</div><div class="kv"><span>fast</span><span>${esc(s.models?.fast||"")}</span></div><div class="kv"><span>deep</span><span>${esc(s.models?.deep||"")}</span></div></div>
+    <div class="card"><div class="ch">Браузер</div><div class="kv"><span>голос</span><span>${f.stt ? "да (" + f.stt_model + ")" : "нет"}</span></div><div class="kv"><span>HTTPS</span><span>${f.tls ? ":" + f.tls_port : "нет"}</span></div><div class="kv"><span>схемы</span><span>${f.mermaid ? "mermaid локально" : "нет (fetch-ui-assets.sh)"}</span></div></div>
+    <div class="card"><div class="ch">Классы действий</div><div class="kv"><span><span class="dot acc"></span> чтение</span><span>без вопросов</span></div><div class="kv"><span><span class="dot warn"></span> изменение</span><span>карточка</span></div><div class="kv"><span><span class="dot dng"></span> актуация</span><span>карточка + откат + удержание</span></div></div>
+  </div><p style="color:var(--tx2);font-size:12px;margin-top:12px">Старый интерфейс: <a href="/classic">/classic</a>. Документация: мануал оператора на рабочем столе устройства.</p>`;
+}
+
+// ---------- dock tabs (registry: a tab = {title, mount(host), render?(sessionData)}) ----------
+let activeTab = store.get("tab", "traces");
+const tabs = {};
+function openTab(id, show = true) { activeTab = id; store.set("tab", id); document.querySelectorAll("#tabs button[data-tab]").forEach(b => b.classList.toggle("active", b.dataset.tab === id));
+  const host = $("#tabHost"); host.innerHTML = ""; tabs[id].mount(host); if (tabs[id].render && lastData) tabs[id].render(lastData); if (show) $("#dock").classList.add("open"); }
+function buildTabs() {
+  $("#tabs").innerHTML = Object.entries(tabs).map(([id, t]) => `<button type="button" data-tab="${id}" class="${t.disabled ? "dis" : ""}" title="${esc(t.hint || "")}">${esc(t.title)}</button>`).join("") + `<span class="sp"></span><button type="button" class="ghost sm" id="dockWide" title="Шире / уже">⇔</button><button type="button" class="ghost sm" id="dockClose" title="Скрыть">×</button>`;
+  $("#tabs").querySelectorAll("button[data-tab]").forEach(b => b.onclick = () => { if (!tabs[b.dataset.tab].disabled) openTab(b.dataset.tab); else alert(tabs[b.dataset.tab].hint); });
+  $("#dockWide").onclick = () => $("#dock").classList.toggle("wide"); $("#dockClose").onclick = () => $("#dock").classList.remove("open");
+}
+// Трейсы: tree of tool calls of the session
+tabs.traces = { title: "Трейсы", filter: "all",
+  mount(h) { h.innerHTML = `<div class="tabbar"><span style="font-weight:600">Вызовы инструментов</span><span class="grow"></span><select id="trFilter" style="font:inherit;font-size:12px;border:1px solid var(--bd2);border-radius:8px;padding:3px 6px;background:var(--surf);color:var(--tx)"><option value="all">все классы</option><option value="read">чтение</option><option value="config">изменение</option><option value="actuation">актуация</option></select></div><div class="tabbody" id="trBody"></div>`;
+    $("#trFilter").value = this.filter; $("#trFilter").onchange = () => { this.filter = $("#trFilter").value; lastData && this.render(lastData); }; },
+  render(d) { const b = $("#trBody"); if (!b) return; let i = 0; const rows = [];
+    d.messages.forEach(m => m.parts.forEach(p => { if (p.type !== "tool") return; const n = (p.tool||"").replace(/^target-host_/, ""), cls = toolClass(n); const idx = i++; if (this.filter !== "all" && cls !== this.filter) return;
+      const brief = p.input?.cmd || p.input?.path || p.input?.action || p.input?.query || p.input?.what || (p.input?.script ? "скрипт" : ""); const dur = p.time?.start && p.time?.end ? ((p.time.end-p.time.start)/1000).toFixed(1)+" с" : ""; const rc = (p.output||"").match(/^rc=(\d+)/);
+      rows.push(`<div class="trace ${cls}" data-id="tool-${p.callID || idx}">${p.status === "completed" ? ICON.ok : p.status === "error" ? ICON.err : ICON.run}<b>${esc(n)}</b>${p.input?.device || p.input?.target ? `<span class="pill">${esc(p.input.device || p.input.target)}</span>` : ""}<span class="brief mono">${esc(brief)}</span>${rc ? `<span class="pill ${rc[1]==="0"?"ok":"dng"} mono">rc=${rc[1]}</span>` : ""}<span class="t">${dur}</span></div>`); }));
+    b.innerHTML = rows.join("") || `<div class="empty">В этой сессии вызовов ещё нет</div>`;
+    b.querySelectorAll(".trace").forEach(r => r.onclick = () => { const el = document.getElementById(r.dataset.id); if (el) { el.open = true; el.scrollIntoView({behavior:"smooth", block:"center"}); stickBottom = false; } }); } };
+// Консоль: live output of the device(s) + operator read-only commands (same allowlist, audited as operator)
+tabs.console = { title: "Консоль", ops: [],
+  mount(h) { h.innerHTML = `<div class="tabbar"><span style="font-weight:600">Вывод устройства</span><span class="pill acc">поток: агент + оператор</span><span class="grow"></span><button type="button" class="ghost sm" id="conClear" title="Очистить команды оператора">очистить</button></div><div class="tabbody" style="padding:8px"><div class="con" id="conBody"></div></div><div class="con-in"><span class="mono" style="color:var(--tx2)">${esc(targetName || "устройство")} $</span><input id="conCmd" placeholder="команда только для чтения (журналы, статус, конфиги)…" autocomplete="off"><button type="button" class="primary sm" id="conRun">▶</button></div><div class="con-note">Команды оператора идут через тот же allowlist чтения, что у агента, и попадают в аудит. Изменения — только через агента и карточку.</div>`;
+    $("#conRun").onclick = () => this.run(); $("#conCmd").onkeydown = e => { if (e.key === "Enter") this.run(); }; $("#conClear").onclick = () => { this.ops = []; lastData && this.render(lastData); }; },
+  async run() { const cmd = $("#conCmd").value.trim(); if (!cmd || !targetName) return; $("#conCmd").value = ""; const ts = new Date().toLocaleTimeString("ru");
+    const rec = { ts: Date.now(), who: "оператор", cls: "read", cmd, out: "…", time: ts }; this.ops.push(rec); this.render(lastData || {messages: []});
+    try { const r = await api(`/api/device/${encodeURIComponent(targetName)}/run`, {method:"POST", body: JSON.stringify({cmd})}); rec.out = r.text; rec.dur = r.seconds; } catch (e) { rec.out = "ошибка: " + e.message; } this.render(lastData || {messages: []}); },
+  render(d) { const b = $("#conBody"); if (!b) return; const items = [];
+    d.messages.forEach(m => m.parts.forEach(p => { if (p.type !== "tool") return; const n = (p.tool||"").replace(/^target-host_/, ""); if (!TAB_FOR[n] && n !== "collect_facts") return;
+      items.push({ ts: p.time?.start || m.time || 0, who: "агент", cls: toolClass(n), cmd: p.input?.cmd || p.input?.action || p.input?.query || p.input?.path || (p.input?.script ? `[${p.input.language || "python"} в песочнице]\n${p.input.script}` : n), out: p.output || "", dur: p.time?.start && p.time?.end ? ((p.time.end-p.time.start)/1000).toFixed(1) : "", dev: p.input?.device || p.input?.target, tool: n }); }));
+    const all = items.concat(this.ops).sort((a, b) => a.ts - b.ts);
+    b.innerHTML = all.map(x => `<div class="blk"><div class="hd"><span>${x.who}</span><span style="color:var(--inkTx2)">${new Date(x.ts).toLocaleTimeString("ru", {hour:"2-digit", minute:"2-digit", second:"2-digit"})}</span><span class="pill ${x.cls}">${CLASS_RU[x.cls]}</span>${x.dev ? `<span class="pill">${esc(x.dev)}</span>` : ""}<span class="grow"></span>${x.dur ? `<span>${x.dur} с</span>` : ""}<button type="button" class="ghost sm" data-ctx="${esc(x.cmd).slice(0, 2000)}" title="Вставить в поле ввода как контекст" style="color:var(--inkTx2);min-height:22px;padding:0 6px">в чат</button></div><div class="cmd">$ ${esc(x.cmd)}</div><pre>${esc((x.out || "").slice(0, 6000))}</pre></div>`).join("") || `<div class="empty" style="color:var(--inkTx2)">Пока пусто: вывод команд агента и оператора появится здесь</div>`;
+    b.querySelectorAll("button[data-ctx]").forEach(bt => bt.onclick = () => { const t = $("#input"); t.value = (t.value ? t.value + "\n" : "") + "Вывод команды `" + bt.dataset.ctx.split("\n")[0] + "` смотри в консоли; "; t.focus(); });
+    const body = b.parentElement; body.scrollTop = body.scrollHeight; } };
+// Устройство: passport + topology + scan
+tabs.device = { title: "Устройство", cur: null, facts: {}, scan: null, sub: "passport",
+  mount(h) { h.innerHTML = `<div class="tabbar"><div class="pill" style="padding:0;overflow:hidden;gap:0"><button type="button" class="ghost sm" data-sub="passport" style="min-height:24px;border-radius:0">Паспорт</button><button type="button" class="ghost sm" data-sub="topology" style="min-height:24px;border-radius:0">Топология</button><button type="button" class="ghost sm" data-sub="scan" style="min-height:24px;border-radius:0">Окружение</button></div><span class="grow"></span><span class="pill" id="devStamp"></span><button type="button" class="sm" id="devRefresh">Обновить</button><a id="devReport" href="#" download><button type="button" class="ghost sm">Отчёт</button></a></div><div class="tabbody" id="devBody"></div>`;
+    h.querySelectorAll("button[data-sub]").forEach(b => b.onclick = () => { this.sub = b.dataset.sub; this.draw(); }); $("#devRefresh").onclick = () => this.sub === "scan" ? this.doScan() : this.load(this.cur || targetName, true);
+    if (!this.cur && targetName) this.load(targetName); else this.draw(); },
+  async load(name, force) { this.cur = name; if (!name) return this.draw(); $("#devReport").href = `/api/device/${encodeURIComponent(name)}/report`;
+    if (!force && this.facts[name]) return this.draw(); const b = $("#devBody"); if (b) b.innerHTML = `<div class="empty">Собираю паспорт ${esc(name)}…</div>`;
+    try { this.facts[name] = await api(`/api/device/${encodeURIComponent(name)}/facts`, {method:"POST", body: "{}"}); this.facts[name].at = new Date(); } catch (e) { this.facts[name] = { error: e.message }; } this.draw(); },
+  async doScan() { const b = $("#devBody"); if (b) b.innerHTML = `<div class="empty">Сканирую USB, порты, CAN, сеть, mDNS (до 30 с)…</div>`; try { this.scan = await api("/api/scan", {method:"POST", body: JSON.stringify({what: "all"})}); this.scan.at = new Date(); } catch (e) { this.scan = { error: e.message }; } this.draw(); },
+  draw() { const b = $("#devBody"); if (!b) return; const s = stateCache || {targets: []}; const name = this.cur || targetName; const dev = s.targets.find(t => t.name === name); const f = this.facts[name];
+    $("#devStamp").textContent = this.sub === "scan" ? (this.scan?.at ? "обновлено " + this.scan.at.toLocaleTimeString("ru", {hour:"2-digit", minute:"2-digit"}) : "") : (f?.at ? "собрано " + f.at.toLocaleTimeString("ru", {hour:"2-digit", minute:"2-digit"}) + (f.seconds ? ` · ${f.seconds} с` : "") : "");
+    if (this.sub === "topology") {
+      const link = s.box?.link; const nodes = s.targets.map(t => `<div class="edge"><span>${t.type === "ssh" ? (link?.profile || "ssh") : t.type}</span></div><div class="node ${t.name === name ? "sel" : ""}" data-dev="${esc(t.name)}"><div class="n"><span class="dot ${this.facts[t.name] && !this.facts[t.name].error ? "ok" : this.facts[t.name]?.error ? "dng" : ""}"></span>${esc(t.name)}</div><div class="s">${esc(t.where)}</div></div>`).join("");
+      b.innerHTML = `<div class="legend"><span><span class="dot ok"></span> паспорт собран</span><span><span class="dot dng"></span> недоступно</span><span><span class="dot"></span> не проверялось</span> · клик по узлу — паспорт</div><div class="topo"><div class="node"><div class="n">${ICON.chip}${esc(s.box?.host || "GB10")}</div><div class="s">${esc(link ? (link.addr || link.state) : "Workbench")}</div></div>${nodes || `<div class="empty">устройств нет</div>`}</div>`;
+      b.querySelectorAll(".node[data-dev]").forEach(n => n.onclick = () => { this.sub = "passport"; this.load(n.dataset.dev); }); return; }
+    if (this.sub === "scan") { const sc = this.scan; if (!sc) { b.innerHTML = `<div class="empty">Что подключено к Workbench: USB, serial-порты, CAN, хосты на каждом линке, mDNS.<br><br><button type="button" class="sm" id="scanNow">Сканировать</button></div>`; $("#scanNow").onclick = () => this.doScan(); return; }
+      if (sc.error) { b.innerHTML = `<div class="err">${esc(sc.error)}</div>`; return; }
+      const icons = { "USB": ICON.usb, "Serial ports": ICON.chip, "CAN interfaces": ICON.net, "Network links": ICON.net }; b.innerHTML = `<div class="cards">` + Object.entries(sc.sections).map(([k, v]) => `<div class="card" style="grid-column:1/-1"><div class="ch">${icons[k] || ICON.box}${esc(k)}</div><pre>${esc(v || "—")}</pre></div>`).join("") + `</div>`; return; }
+    if (!name) { b.innerHTML = `<div class="empty">Устройств нет</div>`; return; } if (!f) { b.innerHTML = `<div class="empty">Нет данных — нажмите «Обновить»</div>`; return; } if (f.error) { b.innerHTML = `<div class="devhead">${ICON.server}<span class="n">${esc(name)}</span></div><div class="err">${esc(f.error)}</div>`; return; }
+    const sec = f.sections || {}; const badge = (t, bad) => `<span class="pill ${bad ? "dng" : "ok"}">${bad ? "внимание" : "ok"}</span>`;
+    if (f.type !== "ssh") { b.innerHTML = `<div class="devhead">${ICON.chip}<div><div class="n">${esc(name)}</div><div class="s">${esc(dev?.where || "")}</div></div></div><div class="card"><div class="ch">Наблюдение</div><pre>${esc(f.text)}</pre></div>`; return; }
+    const os = (sec["os"] || "").split("\n"), pretty = (os.find(l => /PRETTY_NAME/.test(l)) || "").replace(/.*="?|"$/g, ""); const kernel = os[3] || ""; const upt = os[4] || "";
+    const failed = (sec["failed units"] || "").trim(); const errs = (sec["recent errors (this boot)"] || "").trim(); const df = (sec["disks"] || "").split("\n").filter(l => /%/.test(l)); const full = df.filter(l => parseInt((l.match(/(\d+)%/)||[])[1]) >= 85);
+    const gpu = (sec["gpu"] || "").trim(); const reboot = (sec["reboot"] || "").trim(); const net = (sec["network"] || "").trim(); const dpkg = (sec["dpkg state"] || "").trim(); const cm = (sec["cpu/mem"] || "").trim();
+    b.innerHTML = `<div class="devhead">${ICON.server}<div><div class="n">${esc(name)}</div><div class="s">${esc(pretty)} · ядро ${esc(kernel)} · ${esc(upt)}</div></div></div><div class="cards">
+      <div class="card ${full.length ? "warn" : ""}"><div class="ch">Диски<span class="grow"></span>${badge("", full.length)}</div><pre>${esc(df.join("\n") || sec["disks"] || "")}</pre></div>
+      <div class="card ${failed ? "dng" : ""}"><div class="ch">Службы<span class="grow"></span>${badge("", failed)}</div><pre>${esc(failed || "failed-юнитов нет")}</pre></div>
+      <div class="card"><div class="ch">Вычисления</div><pre>${esc(cm)}</pre></div>
+      <div class="card ${/N\/A|not found|failed/i.test(gpu) ? "warn" : ""}"><div class="ch">GPU</div><pre>${esc(gpu || "—")}</pre></div>
+      <div class="card" style="grid-column:1/-1"><div class="ch">Сеть</div><pre>${esc(net)}</pre></div>
+      <div class="card ${/reboot required/i.test(reboot) || /\d+ upgradable/.test(dpkg) && !/upgradable: 0/.test(dpkg) ? "warn" : ""}"><div class="ch">Пакеты</div><pre>${esc(dpkg)}\n${esc(reboot)}</pre></div>
+      <div class="card ${errs ? "warn" : ""}" style="grid-column:1/-1"><div class="ch">Ошибки журнала (эта загрузка)<span class="grow"></span>${badge("", errs)}</div><pre>${esc(errs || "—")}</pre></div></div>`; } };
+// Схема: mermaid diagrams drawn by the agent (```mermaid blocks), editable, exportable; rendered locally
+tabs.diagram = { title: "Схема", src: "", ready: false,
+  mount(h) { h.innerHTML = `<div class="tabbar"><span style="font-weight:600">Схема</span><span class="pill" id="diaStat"></span><span class="grow"></span><button type="button" class="sm" id="diaRender">Отрисовать</button><button type="button" class="ghost sm" id="diaSvg" title="Скачать SVG">SVG</button><button type="button" class="ghost sm" id="diaMmd" title="Скачать исходник">.mmd</button><button type="button" class="ghost sm" id="diaChat" title="Вставить исходник в чат">в чат</button></div><div class="tabbody"><div class="dia" id="diaOut"><div class="empty">Попросите агента: «нарисуй схему зависимостей» — блок mermaid из ответа появится здесь. Исходник можно править ниже.</div></div><textarea class="dia-src" id="diaSrc" placeholder="graph LR; A-->B"></textarea><div class="legend">Mermaid рендерится локально (без CDN). Редактирование — в поле; «в чат» отправит исходник агенту как контекст.</div></div>`;
+    $("#diaSrc").value = this.src; $("#diaRender").onclick = () => { this.src = $("#diaSrc").value; this.render(); }; $("#diaSvg").onclick = () => this.download("svg"); $("#diaMmd").onclick = () => this.download("mmd");
+    $("#diaChat").onclick = () => { const t = $("#input"); t.value = (t.value ? t.value + "\n" : "") + "Схема (mermaid), поправь по замечанию:\n```mermaid\n" + $("#diaSrc").value + "\n```\n"; t.focus(); }; if (this.src) this.render(); },
+  fromSession(d) { let last = ""; d.messages.forEach(m => m.parts.forEach(p => { if (p.type === "text") { const mm = [...p.text.matchAll(/```mermaid\n([\s\S]*?)```/g)]; if (mm.length) last = mm[mm.length-1][1]; } }));
+    if (last && last !== this.src) { this.src = last; if ($("#diaSrc")) { $("#diaSrc").value = last; this.render(); } } },
+  async ensure() { if (this.ready) return true; if (window.mermaid) { this.ready = true; return true; } let f = {}; try { f = await api("/api/features"); } catch {} if (!f.mermaid) return false;
+    await new Promise((res, rej) => { const s = document.createElement("script"); s.src = "/static/vendor/mermaid.min.js"; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+    this.ready = true; return true; },
+  async render() { const out = $("#diaOut"); if (!out) return; if (!this.src.trim()) return; if (!(await this.ensure())) { out.innerHTML = `<div class="empty">Библиотека mermaid не установлена на устройстве: <span class="mono">install/fetch-ui-assets.sh</span> (нужен интернет один раз). Исходник всё равно сохраняется и экспортируется.</div>`; return; }
+    try { mermaid.initialize({ startOnLoad: false, theme: document.documentElement.dataset.theme === "dark" ? "dark" : "neutral", securityLevel: "strict", suppressErrorRendering: true });
+      await mermaid.parse(this.src);                       // syntax errors stop here, nothing touches the DOM
+      const id = "dia" + Date.now(); const { svg } = await mermaid.render(id, this.src); out.innerHTML = svg; $("#diaStat").textContent = (this.src.match(/-->|---|==>|-\.-/g) || []).length + " связей"; }
+    catch (e) { out.innerHTML = `<div class="err">Ошибка схемы: ${esc(e.message || e)}</div>`; }
+    document.querySelectorAll('body > [id^="dia"], body > [id^="ddia"]').forEach(n => n.remove()); },
+  download(kind) { const blob = kind === "svg" ? new Blob([$("#diaOut").innerHTML], {type: "image/svg+xml"}) : new Blob([this.src], {type: "text/plain"}); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `diagram-${new Date().toISOString().slice(0,16).replace(/[:T]/g, "-")}.${kind}`; a.click(); } };
+tabs.library = { title: "Библиотека", disabled: true, hint: "Фаза C дорожной карты: поиск по мануалам и плейбукам. Пока документация загружается в /opt/support/workspace/docs/.", mount(h) { h.innerHTML = ""; } };
+tabs.media = { title: "Медиа", disabled: true, hint: "Фаза D: фото с телефона через хотспот и камера ноутбука.", mount(h) { h.innerHTML = ""; } };
+buildTabs(); openTab(tabs[activeTab] && !tabs[activeTab].disabled ? activeTab : "traces", false);   // on narrow screens the dock stays hidden until asked
+$("#dockToggle").onclick = () => $("#dock").classList.toggle("open"); $("#panelToggle").onclick = () => $("#panel").classList.toggle("open");
 
 // ---------- model profile toggle ----------
 let switching = null;
 $("#profile").addEventListener("click", async e => {
-  const b = e.target.closest("button[data-prof]"); if (!b || b.classList.contains("active")) return;
-  const p = b.dataset.prof;
-  if (!confirm(`Переключить модель на «${p}»? Текущая выгрузится, загрузка новой займёт 5–8 минут; идущий ответ агента прервётся.`)) return;
-  try { await api("/api/model", {method:"POST", body: JSON.stringify({profile: p})}); switching = p; refreshState(); }
-  catch (err) { alert("Не удалось переключить: " + err.message); }
+  const b = e.target.closest("button[data-prof]"); if (!b || b.classList.contains("active")) return; const p = b.dataset.prof;
+  if (!confirm(`Переключить модель на «${p}»? Текущая выгрузится, загрузка новой займёт 6–12 минут; идущий ответ агента прервётся.`)) return;
+  try { await api("/api/model", {method:"POST", body: JSON.stringify({profile: p})}); switching = p; refreshState(); } catch (err) { alert("Не удалось переключить: " + err.message); }
 });
 function renderProfile(s) {
   const active = s.profiles.fast === "active" ? "fast" : s.profiles.deep === "active" ? "deep" : null;
   const activating = s.profiles.fast === "activating" ? "fast" : s.profiles.deep === "activating" ? "deep" : null;
   if (s.llm.up) switching = null;
-  document.querySelectorAll("#profile button").forEach(b => {
-    const p = b.dataset.prof;
-    b.classList.toggle("active", s.llm.up && p === active);
-    b.classList.toggle("loading", !s.llm.up && (p === activating || p === active || p === switching));
-    b.textContent = (!s.llm.up && (p === activating || p === active || p === switching)) ? p + "…" : p;
-  });
+  document.querySelectorAll("#profile button").forEach(b => { const p = b.dataset.prof; const on = s.llm.up && p === active; b.classList.toggle("active", on); b.style.background = on ? "var(--accS)" : ""; b.style.color = on ? "var(--acc)" : ""; b.textContent = (!s.llm.up && (p === activating || p === active || p === switching)) ? p + "…" : p; });
 }
 
 // ---------- actions ----------
 window.addEventListener("hashchange", () => selectSession(location.hash.slice(1)));
 $("#newSession").onclick = async () => { const s = await api("/api/session", {method:"POST", body: JSON.stringify({title: "Сессия " + new Date().toLocaleString("ru", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"})})}); await refreshState(); location.hash = s.id; };
 $("#form").onsubmit = async e => {
-  e.preventDefault(); const text = $("#input").value.trim(); if (!text || !sid) return;
-  $("#input").value = ""; stickBottom = true; await api(`/api/session/${sid}/prompt`, {method:"POST", body: JSON.stringify({text})}); poll();
+  e.preventDefault(); let text = $("#input").value.trim(); if (!text || !sid) return;
+  if (mode === "plan") text += "\n\n(Режим «План»: только диагностика и план действий, ничего не менять — запросы на изменение будут отклонены.)";
+  $("#input").value = ""; $("#input").style.height = ""; stickBottom = true; await api(`/api/session/${sid}/prompt`, {method:"POST", body: JSON.stringify({text})}); poll();
 };
 $("#input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form").requestSubmit(); } });
+$("#input").addEventListener("input", e => { e.target.style.height = "auto"; e.target.style.height = Math.min(160, e.target.scrollHeight) + "px"; });
 $("#abort").onclick = () => api(`/api/session/${sid}/abort`, {method:"POST"});
+$("#exportSession").onclick = () => { if (sid) location.href = `/api/session/${sid}/export`; };
+async function answerPerm(card, resp) {
+  const pid = card.dataset.pid; card.querySelectorAll("button").forEach(x => x.disabled = true);
+  try { await api(`/api/session/${sid}/permission/${pid}`, {method:"POST", body: JSON.stringify({response: resp})}); }
+  catch (err) { alert(/409/.test(err.message) ? "Актуация одобряется каждый раз отдельно." : "Не удалось ответить: " + err.message); card.querySelectorAll("button").forEach(x => x.disabled = false); }
+  poll();
+}
+// hold-to-confirm for ACTUATION (enabling-switch analogue): 1.2 s press, releases early = nothing happens
+const HOLD_MS = 1200;
+$("#log").addEventListener("pointerdown", e => {
+  const b = e.target.closest("button[data-hold]"); if (!b) return; e.preventDefault();
+  const fill = b.querySelector(".fill"); const t0 = Date.now(); b.setPointerCapture?.(e.pointerId);
+  const tick = () => { if (!b._holding) return; const k = Math.min(1, (Date.now() - t0) / HOLD_MS); fill.style.width = (k * 100) + "%"; if (k >= 1) { b._holding = false; answerPerm(b.closest(".perm"), "once"); } else requestAnimationFrame(tick); };
+  b._holding = true; requestAnimationFrame(tick);
+  const stop = () => { if (b._holding) { b._holding = false; fill.style.width = "0"; } b.removeEventListener("pointerup", stop); b.removeEventListener("pointercancel", stop); b.removeEventListener("pointerleave", stop); };
+  b.addEventListener("pointerup", stop); b.addEventListener("pointercancel", stop); b.addEventListener("pointerleave", stop);
+});
 $("#log").addEventListener("click", async e => {
   const qb = e.target.closest("button[data-qact]");
   if (qb) {
     const card = qb.closest(".q"), qid = card.dataset.qid;
     if (qb.dataset.qact === "reject") { await api(`/api/session/${sid}/question/${qid}`, {method:"POST", body: JSON.stringify({reject: true})}); poll(); return; }
-    const n = Math.max(1, new Set([...card.querySelectorAll("[data-q]")].map(x => x.dataset.q)).size || 1);
-    const answers = [];
-    for (let i = 0; i < n; i++) {
-      const picked = [...card.querySelectorAll(`input[name="q${qid}_${i}"]:checked`)].map(x => x.value);
-      const custom = card.querySelector(`input[data-custom="${i}"]`)?.value.trim();
-      if (custom) picked.push(custom);
-      answers.push(picked);
-    }
+    const n = Math.max(1, new Set([...card.querySelectorAll("[data-q]")].map(x => x.dataset.q)).size || 1); const answers = [];
+    for (let i = 0; i < n; i++) { const picked = [...card.querySelectorAll(`input[name="q${qid}_${i}"]:checked`)].map(x => x.value); const custom = card.querySelector(`input[data-custom="${i}"]`)?.value.trim(); if (custom) picked.push(custom); answers.push(picked); }
     if (answers.every(a => !a.length)) { alert("Выберите вариант или впишите ответ"); return; }
-    card.querySelectorAll("button").forEach(x => x.disabled = true);
-    await api(`/api/session/${sid}/question/${qid}`, {method:"POST", body: JSON.stringify({answers})}); poll(); return;
+    card.querySelectorAll("button").forEach(x => x.disabled = true); await api(`/api/session/${sid}/question/${qid}`, {method:"POST", body: JSON.stringify({answers})}); poll(); return;
   }
-  const b = e.target.closest("button[data-resp]"); if (!b) return;
-  const pid = b.closest(".perm").dataset.pid; b.closest(".actions").querySelectorAll("button").forEach(x => x.disabled = true);
-  try { await api(`/api/session/${sid}/permission/${pid}`, {method:"POST", body: JSON.stringify({response: b.dataset.resp})}); }
-  catch (err) { alert(/409/.test(err.message) ? "Актуация одобряется каждый раз отдельно — нажмите «Разрешить этот раз»." : "Не удалось ответить: " + err.message); b.closest(".actions").querySelectorAll("button").forEach(x => x.disabled = false); }
-  poll();
+  const b = e.target.closest("button[data-resp]"); if (!b || b.dataset.hold) return;
+  answerPerm(b.closest(".perm"), b.dataset.resp);
 });
 
 refreshState(); if (sid) selectSession(sid);
-setInterval(poll, 1500); setInterval(refreshState, 10000);
+setInterval(poll, 1500); setInterval(refreshState, 8000);
 
 // ---------- PWA ----------
 if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -435,9 +662,8 @@ async function stopRec() {
 }
 $("#mic").onclick = () => stt.recording ? stopRec() : startRec();
 document.addEventListener("keydown", e => {
-  if (e.code === "Space" && !["INPUT","TEXTAREA","BUTTON"].includes(document.activeElement?.tagName) && $("#mic").style.display !== "none" && !e.repeat) { e.preventDefault(); $("#mic").click(); }
+  if (e.code === "Space" && !["INPUT","TEXTAREA","BUTTON","SELECT"].includes(document.activeElement?.tagName) && $("#mic").style.display !== "none" && !e.repeat) { e.preventDefault(); $("#mic").click(); }
 });
-// Self-test without a microphone: ?stt_test=/static/vendor/test.wav transcribes that file into the input box.
 const sttTest = new URLSearchParams(location.search).get("stt_test");
 initVoice().then(async () => {
   if (!sttTest) return;

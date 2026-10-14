@@ -19,9 +19,19 @@ if [ ! -f "$ASSETS/vendor/.version" ] || [ "$(cat "$ASSETS/vendor/.version")" !=
   mkdir -p "$tmp/tf" "$tmp/ort"
   tar xzf "$tmp/tf.tgz" -C "$tmp/tf" package/dist/transformers.min.js
   tar xzf "$tmp/ort.tgz" -C "$tmp/ort"            # bsdtar (macOS) has no --wildcards; extract all, copy what we need
-  rm -f "$ASSETS"/vendor/*.js "$ASSETS"/vendor/*.mjs "$ASSETS"/vendor/*.wasm
+  find "$ASSETS/vendor" -maxdepth 1 \( -name '*.js' -o -name '*.mjs' -o -name '*.wasm' \) ! -name 'mermaid.min.js' -delete
   cp "$tmp"/tf/package/dist/transformers.min.js "$tmp"/ort/package/dist/ort-wasm-simd-threaded*.wasm "$tmp"/ort/package/dist/ort-wasm-simd-threaded*.mjs "$ASSETS/vendor/"
   echo "$TRANSFORMERS_JS_VERSION/$ORT_WEB_VERSION" > "$ASSETS/vendor/.version"
+  rm -rf "$tmp"
+fi
+
+if [ ! -f "$ASSETS/vendor/mermaid.min.js" ] || [ "$(cat "$ASSETS/vendor/.mermaid" 2>/dev/null)" != "$MERMAID_VERSION" ]; then
+  echo "  vendor: mermaid $MERMAID_VERSION (diagram tab)"
+  tmp=$(mktemp -d)
+  curl -fsSL -o "$tmp/mermaid.tgz" "https://registry.npmjs.org/mermaid/-/mermaid-$MERMAID_VERSION.tgz"
+  mkdir -p "$tmp/m" && tar xzf "$tmp/mermaid.tgz" -C "$tmp/m" package/dist/mermaid.min.js
+  cp "$tmp/m/package/dist/mermaid.min.js" "$ASSETS/vendor/mermaid.min.js"
+  echo "$MERMAID_VERSION" > "$ASSETS/vendor/.mermaid"
   rm -rf "$tmp"
 fi
 

@@ -1,13 +1,13 @@
 {
-  "name": "Spark Support",
-  "short_name": "Spark Support",
-  "description": "Полевой агент техподдержки на GX10",
+  "name": "Workbench",
+  "short_name": "Workbench",
+  "description": "Полевой ИИ-инженер на NVIDIA GB10",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0f1115",
-  "theme_color": "#0B1016",
+  "background_color": "#F3F4F6",
+  "theme_color": "#F3F4F6",
   "lang": "ru",
   "icons": [
     {

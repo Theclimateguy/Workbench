@@ -18,8 +18,12 @@
  │                 (--cap-drop ALL, без GPU/файлов, сеть none|device)  │
  │  support-priv (sudo, фиксированные verbs: net-allow/clear, can-restart, arp-scan) │
  │  support-ui / support-ui-tls (FastAPI)  → :8080 http, :8443 https   │
+ │     ├─ index.html (UI v2: статус-полоса, рельс, чат, док-вкладки)   │
+ │     │    /classic — прежний одноколоночный UI                      │
+ │     ├─ /api/device/*: паспорт, консоль оператора, отчёт; /api/scan  │
+ │     │    (target_host.py импортируется в процесс: те же allowlist)  │
  │     ├─ /static: PWA (manifest, sw.js), STT-worker (Transformers.js) │
- │     └─ /opt/support/ui-assets: Whisper ONNX + ORT wasm (офлайн)     │
+ │     └─ /opt/support/ui-assets: Whisper ONNX + ORT wasm, mermaid     │
  │  support-ctl (CLI), support-resolve-target, onboard-target.sh       │
  │  NetworkManager: lan (DHCP) → direct (10.77.0.1 shared) → hotspot   │
  └─────────────────────────────────────────────────────────────────────┘
@@ -33,7 +37,7 @@
 | Песочница | `stack/workbench/Dockerfile` | образ `workbench:local`, сеть docker `workbench` (172.31.77.0/24), прогоны `/opt/support/workbench/runs/<ts>/` (скрипт, devices.json, stdout/stderr) |
 | Root-операции | `agent/bin/support-priv` | `/opt/support/bin/support-priv` + правило в `/etc/sudoers.d/90-support-ui` |
 | Стенд приёмки | `tests/eval/` | `/opt/support/tests/eval`, контейнер `evalbox`, устройство `evalbox` |
-| UI | `agent/ui/{support_ui.py,index.html,static/}`, `stack/systemd/support-ui{,-tls}.service` | `/opt/support/ui`, `/opt/support/ui-assets`, пароль `/etc/support/web.env`, TLS `/etc/support/tls` |
+| UI | `agent/ui/{support_ui.py,index.html,classic.html,static/}`, `stack/systemd/support-ui{,-tls}.service` | `/opt/support/ui`, `/opt/support/ui-assets` (Whisper, ORT, mermaid), пароль `/etc/support/web.env`, TLS `/etc/support/tls` |
 | CLI | `agent/bin/*` | `/opt/support/bin`, `/usr/local/bin/support-ctl` |
 | Сеть | `stack/net/*.yaml` | `/etc/netplan/90-support-*.yaml`, профиль `hotspot` в NM |
 | Устройства | — | `/opt/support/targets/*.env` (`TYPE=ssh` по умолчанию; `serial`, `can`, `modbus`, `http`), `/opt/support/keys/` |
@@ -68,6 +72,17 @@
 | deep | gpt-oss-120b MXFP4 (Marlin) | 36 (31/поток при 2) | 66 + 27 (KV) ГиБ (util 0.80) | 9 мин |
 
 Профили взаимоисключающие (`Conflicts=`), переключение `support-ctl model`.
+
+## Web-интерфейс v2
+
+Реализация плана [ui-v2-plan.md](ui-v2-plan.md) (этапы 1–3) в одном файле без сборки, офлайн:
+
+- **Статус-полоса** с цветной кромкой — один глобальный сигнал режима: серая (нет устройств) · синяя (чтение) · янтарная (авто-изменения) · красная (ожидает актуацию). Устройства, RJ45-профиль и адрес, модель, память GB10, режим одобрений, аудит, fast|deep, тема.
+- **Режимы одобрений** (клиентская логика поверх `/permission`): *Спрашивать*; *Авто-изменения* — UI сам отвечает `once` на класс «изменение», актуация всегда спрашивает; *План* — UI отвечает `reject` на всё изменяющее и добавляет пометку к задаче.
+- **Карточка одобрения v2**: класс, намерение, команда/скрипт, ожидаемый эффект, откат; для актуации — кнопка-удержание 1.2 с (аналог enabling switch), «всегда» отсутствует (сервер дополнительно отвечает 409).
+- **Док-вкладки** — реестр `tabs` в JS (`{title, mount, render}`), новые вкладки добавляются без правки ядра: Трейсы (дерево вызовов по классам, переход к блоку), Консоль (хронология вывода агент+оператор; строка оператора → `/api/device/{name}/run` → `run_readonly`/`observe` с тем же allowlist, аудит `by: operator`), Устройство (паспорт из `collect_facts`/`observe` через `/api/device/{name}/facts`, топология из списка устройств и профиля линка, окружение из `/api/scan`), Схема (блоки ```mermaid из ответов агента, рендер `mermaid.min.js` из ui-assets, правка, экспорт SVG/.mmd). Библиотека и Медиа — заглушки до фаз C/D.
+- Адаптив: ≥1100 px три колонки; уже — панель и док по кнопкам; <768 px док как нижний лист. Классический UI — `/classic`.
+- Не реализовано из плана: SSE-шина (используется опрос 1.5 с), плагины-вкладки из внешних файлов (манифест), фото/камера, библиотека.
 
 ## Устройства и коннекторы
 

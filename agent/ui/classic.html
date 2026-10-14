@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spark Support</title>
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" href="/static/icons/icon-48.png" type="image/png">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<meta name="theme-color" content="#ECECEE">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<script src="/static/lib/marked.umd.js"></script>
+<style>
+  /* ---- macOS-like palette (light default; dark via toggle) ---- */
+  :root { --bg:#F5F5F7; --bar:#ECECEE; --side:#F0F0F3; --panel:#FFFFFF; --ink:#1D1D1F; --muted:#6E6E73; --line:#D9D9DE; --line2:#E5E5EA;
+          --accent:#0A84FF; --accent-ink:#FFFFFF; --ok:#34C759; --warn:#FFCC00; --bad:#D70015; --good:#248A3D; --code:#ECECEE; --seg:#DEDEE2; --shadow:0 1px 2px rgba(0,0,0,.12); }
+  :root[data-theme="dark"] { --bg:#1C1C1E; --bar:#2A2A2D; --side:#232326; --panel:#2C2C2E; --ink:#F2F2F7; --muted:#98989D; --line:#3A3A3C; --line2:#3A3A3C;
+          --accent:#0A84FF; --code:#3A3A3C; --seg:#3A3A3C; --shadow:0 1px 2px rgba(0,0,0,.5); --bad:#FF453A; --good:#30D158; }
+  * { box-sizing:border-box }
+  html, body { height:100%; overflow:hidden }
+  body { margin:0; font:13px/1.45 -apple-system, "SF Pro Text", system-ui, "Helvetica Neue", "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased }
+  button { font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:5px 12px; cursor:pointer }
+  button:hover { filter:brightness(.97) } button:disabled { opacity:.5; cursor:default }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600 }
+  .mono { font-family:"SF Mono", Menlo, Consolas, monospace; font-size:12px }
+  .app { height:100vh; height:100dvh; display:flex; flex-direction:column }
+
+  /* top bar */
+  .topbar { height:52px; flex-shrink:0; display:flex; align-items:center; gap:12px; padding:0 16px; background:var(--bar); border-bottom:1px solid var(--line) }
+  .topbar .brand { font-weight:600; font-size:14px; width:200px; display:flex; align-items:center; gap:8px }
+  .topbar .brand img { width:22px; height:22px; border-radius:6px }
+  .segment { display:flex; background:var(--seg); border-radius:8px; padding:2px; gap:2px }
+  .segment button { border:0; background:transparent; color:var(--muted); padding:4px 14px; border-radius:6px; box-shadow:none }
+  .segment button.active { background:var(--panel); color:var(--ink); font-weight:600; box-shadow:var(--shadow) }
+  .center { flex:1; display:flex; justify-content:center; align-items:center; gap:12px }
+  .right { display:flex; align-items:center; gap:10px; justify-content:flex-end; min-width:260px }
+  .chip { display:inline-flex; align-items:center; gap:6px; color:var(--muted); white-space:nowrap }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--muted) } .dot.ok { background:var(--ok) } .dot.bad { background:var(--bad) } .dot.warn { background:var(--warn) }
+  .busy { color:var(--muted) }
+  #profile button.loading { color:var(--accent) }
+  .q { max-width:760px; background:var(--panel); border-radius:12px; box-shadow:0 0 0 1px var(--line2), 0 4px 14px rgba(0,0,0,.06); padding:14px 16px; display:flex; gap:14px; align-items:flex-start }
+  .q .body2 { flex:1; display:flex; flex-direction:column; gap:10px; min-width:0 }
+  .q .title { font-weight:600; font-size:14px } .q .text { font-size:14px }
+  .q .opts { display:flex; flex-direction:column; gap:6px }
+  .q .opt { display:flex; gap:10px; align-items:flex-start; padding:8px 10px; border:1px solid var(--line); border-radius:8px; cursor:pointer; background:var(--panel) }
+  .q .opt:hover { background:var(--bg) } .q .opt.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) }
+  .q .opt b { font-weight:600 } .q .opt span { color:var(--muted); font-size:12px }
+  .q input[type=text] { font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink) }
+  .q .actions { display:flex; gap:8px; justify-content:flex-end }
+
+  /* body */
+  .body { flex:1; min-height:0; display:flex }
+  aside { width:260px; flex-shrink:0; background:var(--side); border-right:1px solid var(--line); display:flex; flex-direction:column; padding:14px 10px; gap:4px; overflow:hidden }
+  aside .head { display:flex; justify-content:space-between; align-items:center; padding:0 6px 6px }
+  aside h2 { margin:0; font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em }
+  aside .head button { padding:3px 10px; border-radius:6px }
+  .sessions { flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; gap:2px }
+  .sessions a { display:block; padding:8px 10px; border-radius:8px; color:inherit; text-decoration:none }
+  .sessions a .t { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .sessions a .s { font-size:11px; color:var(--muted) }
+  .sessions a:hover { background:var(--seg) }
+  .sessions a.active { background:var(--accent); color:#fff } .sessions a.active .s { color:#fff; opacity:.85 }
+  .foot { padding:10px 10px 0; border-top:1px solid var(--line); font-size:11px; color:var(--muted); display:flex; flex-direction:column; gap:3px }
+  .foot b { color:var(--ink); font-weight:500 }
+
+  main { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; position:relative }
+  #log { flex:1; min-height:0; overflow-y:auto; padding:20px 28px; display:flex; flex-direction:column; gap:14px }
+  .user { display:flex; justify-content:flex-end }
+  .user .b { max-width:640px; background:var(--accent); color:#fff; border-radius:16px 16px 4px 16px; padding:9px 14px; font-size:14px; white-space:pre-wrap; word-break:break-word }
+  .agent { max-width:760px; font-size:14px; word-break:break-word }
+  .agent > :first-child { margin-top:0 } .agent > :last-child { margin-bottom:0 }
+  .agent p { margin:0 0 .6em } .agent ul, .agent ol { margin:.3em 0 .6em; padding-left:1.4em } .agent li { margin:.15em 0 }
+  .agent h1, .agent h2, .agent h3, .agent h4 { margin:.8em 0 .4em; line-height:1.25 } .agent h1 { font-size:1.2em } .agent h2 { font-size:1.1em } .agent h3 { font-size:1.02em }
+  .agent code { font-family:"SF Mono", Menlo, Consolas, monospace; font-size:12px; background:var(--code); padding:1px 5px; border-radius:4px }
+  .agent pre { background:var(--code); padding:8px 10px; border-radius:8px; overflow:auto; margin:.4em 0 .7em } .agent pre code { background:none; padding:0 }
+  .agent table { border-collapse:collapse; width:100%; max-width:100%; font-size:13px; background:var(--panel); border-radius:10px; box-shadow:0 0 0 1px var(--line2); overflow:hidden; margin:.4em 0 .8em; display:block; overflow-x:auto }
+  .agent th, .agent td { text-align:left; padding:7px 12px; border-bottom:1px solid var(--line2); vertical-align:top } .agent th { background:var(--bg); color:var(--muted); font-weight:600 }
+  .agent tr:last-child td { border-bottom:0 }
+  .agent blockquote { margin:.4em 0; padding:2px 12px; border-left:3px solid var(--line); color:var(--muted) }
+  .agent hr { border:0; border-top:1px solid var(--line2); margin:.8em 0 } .agent a { color:var(--accent) }
+  .meta { font-size:11px; color:var(--muted); margin-bottom:4px }
+  .err { color:var(--bad); font-size:13px }
+  details.tool { font-size:12px; color:var(--muted); padding-left:2px }
+  details.tool summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:8px } details.tool summary::-webkit-details-marker { display:none }
+  details.tool summary b { color:var(--ink); font-weight:500 }
+  details.tool pre { white-space:pre-wrap; margin:6px 0 0 22px; max-height:320px; overflow:auto; background:var(--code); border-radius:8px; padding:8px 10px; font-size:12px; color:var(--ink) }
+  details.reason { font-size:12px; color:var(--muted); padding-left:2px } details.reason summary { cursor:pointer } details.reason pre { white-space:pre-wrap; max-height:200px; overflow:auto; margin:6px 0 0; font:inherit }
+  .perm { max-width:760px; background:var(--panel); border-radius:12px; box-shadow:0 0 0 1px var(--line2), 0 4px 14px rgba(0,0,0,.06); padding:14px 16px; display:flex; gap:14px; align-items:flex-start }
+  .perm .body2 { flex:1; display:flex; flex-direction:column; gap:8px; min-width:0 }
+  .perm .title { font-weight:600; font-size:14px } .perm .why { color:var(--muted) }
+  .perm pre { font-family:"SF Mono", Menlo, Consolas, monospace; font-size:12px; background:var(--bg); border-radius:8px; padding:8px 10px; margin:0; white-space:pre-wrap; max-height:260px; overflow:auto; line-height:1.5 }
+  .perm .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:2px }
+  .perm { border-left:4px solid var(--warn) } .perm.actuation { border-left-color:var(--bad) } .perm.actuation .title { color:var(--bad) }
+  .perm .cls { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted) } .perm.actuation .cls { color:var(--bad); font-weight:600 }
+  .perm .rb { font-size:13px } .perm .rb b { font-weight:600 }
+  .perm.actuation button.primary { background:var(--bad); border-color:var(--bad) }
+  details.tool.actuation summary b { color:var(--bad) } details.tool.config summary b { color:#B25E00 }
+  #toBottom { position:absolute; right:28px; bottom:84px; z-index:2; border-radius:999px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,.2) }
+  form { padding:12px 28px 16px; display:flex; gap:10px; align-items:flex-end; border-top:1px solid var(--line2); background:var(--bar) }
+  form textarea { flex:1; font:inherit; font-size:14px; min-height:40px; max-height:200px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--panel); color:var(--ink); resize:vertical }
+  form .send { height:40px; padding:0 18px; border-radius:10px }
+  #mic { width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0 }
+  #mic.rec { background:var(--bad); border-color:var(--bad); animation:pulse 1s infinite } #mic.rec svg { stroke:#fff }
+  @keyframes pulse { 50% { opacity:.6 } }
+  #sttStatus, #hint { font-size:12px; color:var(--muted); padding:4px 28px; background:var(--bar) } #hint a { color:var(--accent) }
+  /* audit view */
+  #audit { flex:1; min-height:0; overflow:auto; padding:20px 28px }
+  #audit table { border-collapse:collapse; width:100%; font-size:12px; background:var(--panel); border-radius:10px; box-shadow:0 0 0 1px var(--line2); overflow:hidden }
+  #audit th, #audit td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--line2); vertical-align:top } #audit th { background:var(--bg); color:var(--muted); font-weight:600 }
+  #audit td.c { font-family:"SF Mono", Menlo, Consolas, monospace; white-space:pre-wrap; word-break:break-all }
+  .rej { color:var(--bad) }
+  @media (max-width: 860px) { aside { display:none } .topbar .brand { width:auto } .right { min-width:0 } .chip span.l { display:none } }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand"><img src="/static/icons/icon-48.png" alt="">Spark Support</div>
+    <div class="center">
+      <div class="segment">
+        <button type="button" id="tabChat" class="active">Сессия</button>
+        <button type="button" id="tabAudit">Аудит</button>
+      </div>
+      <span id="busy" class="busy" style="display:none">думает…</span>
+      <button type="button" id="abort" style="display:none">Стоп</button>
+      <button type="button" id="exportSession" title="Скачать сессию как Markdown">Экспорт</button>
+    </div>
+    <div class="right">
+      <div class="segment" id="profile" title="Профиль модели: fast — Qwen3.6 35B (быстро), deep — gpt-oss 120B (глубже рассуждает). Переключение занимает 5–8 минут.">
+        <button type="button" data-prof="fast">fast</button>
+        <button type="button" data-prof="deep">deep</button>
+      </div>
+      <span class="chip" id="llmChip"><span class="dot"></span><span class="l">LLM</span></span>
+      <span class="chip" id="targetChip"><span class="dot"></span><span class="l">цель</span></span>
+      <button type="button" id="installPwa" style="display:none" title="Установить как приложение">Установить</button>
+      <button type="button" id="theme" title="Светлая / тёмная тема" aria-label="Переключить тему" style="padding:5px 8px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+      </button>
+    </div>
+  </div>
+  <div class="body">
+    <aside>
+      <div class="head"><h2>Сессии</h2><button type="button" id="newSession">+ Новая</button></div>
+      <div id="sessions" class="sessions"></div>
+      <div class="foot" id="foot"></div>
+    </aside>
+    <main>
+      <div id="log"></div>
+      <button id="toBottom" type="button" style="display:none" title="К последним сообщениям">↓ вниз</button>
+      <div id="audit" style="display:none"></div>
+      <div id="hint" style="display:none"></div>
+      <div id="sttStatus" style="display:none"></div>
+      <form id="form">
+        <button type="button" id="mic" style="display:none" aria-label="Голосовой ввод" title="Голосовой ввод: нажми — говори — нажми ещё раз (или пробел, когда курсор не в поле)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
+        </button>
+        <textarea id="input" rows="1" placeholder="Опиши проблему или задачу… Enter — отправить"></textarea>
+        <button class="primary send" id="send" type="submit">Отправить</button>
+      </form>
+    </main>
+  </div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+let sid = location.hash.slice(1) || null, lastHTML = "", targetName = "", busySince = null;
+const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+marked.use({ gfm: true, breaks: true });
+const fmt = s => { try { return marked.parse(esc(s)); } catch { return esc(s).replace(/\n/g, "<br>"); } };
+const api = async (path, opt={}) => {
+  const r = await fetch(location.origin + path, {headers:{"Content-Type":"application/json"}, ...opt});
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  return r.json();
+};
+const ICON = {
+  ok: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#34C759"/><path d="M4.5 8.2l2.3 2.3 4.7-4.7" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  err: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#D70015"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  run: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="#0A84FF" stroke-width="2" stroke-dasharray="20 18"><animateTransform attributeName="transform" type="rotate" from="0 8 8" to="360 8 8" dur="1s" repeatCount="indefinite"/></circle></svg>',
+  warn: '<svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true"><path d="M18 3l15 27H3z" fill="#FFCC00"/><path d="M18 13v8" stroke="#1D1D1F" stroke-width="2.4" stroke-linecap="round"/><circle cx="18" cy="25" r="1.5" fill="#1D1D1F"/></svg>',
+};
+
+// ---------- theme ----------
+const applyTheme = t => { document.documentElement.dataset.theme = t; try { localStorage.setItem("theme", t); } catch {} };
+try { applyTheme(localStorage.getItem("theme") || "light"); } catch { applyTheme("light"); }
+$("#theme").onclick = () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+
+// ---------- state / sidebar ----------
+async function refreshState() {
+  try {
+    const s = await api("/api/state");
+    renderProfile(s);
+    const llm = $("#llmChip"); llm.querySelector(".dot").className = "dot " + (s.llm.up ? "ok" : (s.profiles.fast === "activating" || s.profiles.deep === "activating" || switching) ? "warn" : "bad");
+    llm.querySelector(".l").textContent = s.llm.up ? (s.profiles.fast === "active" ? "Qwen3.6 35B" : "gpt-oss 120B") : (s.profiles.fast === "activating" || s.profiles.deep === "activating" || switching) ? "модель загружается…" : "LLM offline";
+    const t = $("#targetChip"); targetName = s.targets[0]?.name || "";
+    t.querySelector(".dot").className = "dot " + (s.targets.length ? "ok" : "warn");
+    t.querySelector(".l").textContent = s.targets.length ? s.targets.map(x => x.name + (x.type && x.type !== "ssh" ? ":" + x.type : "")).join(", ") : "нет устройств";
+    $("#sessions").innerHTML = s.sessions.map(x => `<a href="#${x.id}" class="${x.id===sid?"active":""}"><div class="t">${esc(x.title || x.id)}</div><div class="s">${x.updated ? new Date(x.updated).toLocaleString("ru", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"}) : ""}</div></a>`).join("");
+    $("#foot").innerHTML = (s.targets.length ? s.targets.map(x => `<div><b>${esc(x.name)}</b> · ${esc(x.type || "ssh")} · ${esc(x.where || x.user + "@" + x.host)}</div>`).join("") : `<div>Устройства не заданы: <span class="mono">support-ctl target add ws user@host</span> / <span class="mono">support-ctl device add …</span></div>`)
+      + `<div>Документация: ${s.docs.files} файлов, ~${s.docs.tokens_est.toLocaleString("ru")} токенов</div>`;
+    if (!sid && s.sessions.length) location.hash = s.sessions[0].id;
+  } catch (e) { $("#llmChip .l").textContent = /503/.test(e.message) ? "агент недоступен" : "ошибка: " + e.message.slice(0, 40); $("#llmChip .dot").className = "dot bad"; }
+}
+
+// ---------- chat rendering ----------
+const CLASS = { actuation: ["device_actuate","device_recover","reboot_and_wait"], config: ["run_change","write_file","device_act","workbench_run"] };
+const toolClass = t => CLASS.actuation.includes(t) ? "actuation" : CLASS.config.includes(t) ? "config" : "read";
+const WHAT = { run_change: "выполнить команду", write_file: "изменить файл", reboot_and_wait: "перезагрузить", device_act: "изменить настройку",
+               device_actuate: "воздействовать на оборудование", device_recover: "сбросить / перезапустить", workbench_run: "запустить свой скрипт в песочнице" };
+function renderPerm(p, calls) {
+  const call = calls[p.tool?.callID] || {};
+  const i = Object.keys(p.metadata?.input || {}).length ? p.metadata.input : (call.input || p.metadata || {});
+  const tool = (call.tool || p.metadata?.tool || p.tool?.name || p.permission || "").replace(/^target-host_/, "");
+  const cls = toolClass(tool), what = WHAT[tool] || tool;
+  const where = i.device || i.target || (tool === "workbench_run" ? "Workbench (песочница)" : targetName || "цели");
+  let body;
+  if (tool === "workbench_run") body = `# ${i.language || "python"} · сеть: ${i.network || "none"}${i.devices ? " · устройства: " + i.devices : ""}${i.usb ? " · USB" : ""}\n${i.script || ""}`;
+  else if (i.cmd) body = i.cmd;
+  else if (i.action !== undefined) body = i.action;
+  else if (i.path) body = `${i.path}\n${i.content !== undefined ? "--- содержимое ---\n" + i.content : ""}`;
+  else body = JSON.stringify(i, null, 1);
+  const clsLabel = cls === "actuation" ? "Актуация — одобряется каждый раз" : cls === "config" ? "Изменение" : "";
+  return `<div class="perm ${cls}" data-pid="${p.id}" data-cls="${cls}">${ICON.warn}<div class="body2">
+    ${clsLabel ? `<div class="cls">${clsLabel}</div>` : ""}
+    <div class="title">Агент хочет ${esc(what)} · ${esc(where)}</div>
+    ${i.reason ? `<div class="why">Причина: ${esc(i.reason)}</div>` : ""}
+    <pre>${esc(body)}</pre>
+    ${i.rollback ? `<div class="rb"><b>Откат:</b> ${esc(i.rollback)}</div>` : cls === "actuation" ? `<div class="rb err">План отката не указан</div>` : ""}
+    <div class="actions">
+      <button type="button" data-resp="reject">Отклонить</button>
+      ${cls === "actuation" ? "" : `<button type="button" data-resp="always">Разрешить всегда</button>`}
+      <button type="button" class="primary" data-resp="once">${cls === "actuation" ? "Разрешить этот раз" : "Разрешить"}</button>
+    </div></div></div>`;
+}
+const ICON_Q = '<svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="#0A84FF"/><path d="M13.5 14.5a4.5 4.5 0 1 1 6.3 4.1c-1.2.6-1.8 1.3-1.8 2.6" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round"/><circle cx="18" cy="25.5" r="1.6" fill="#fff"/></svg>';
+function renderQuestion(q) {
+  // one card per request; several questions inside are rare — render them stacked, answers collected in order
+  const blocks = q.questions.map((qi, n) => {
+    const opts = (qi.options || []).map((o, k) => `<label class="opt" data-q="${n}" data-k="${k}"><input type="${qi.multiple ? "checkbox" : "radio"}" name="q${q.id}_${n}" value="${esc(o.label)}" style="margin-top:3px"><div><b>${esc(o.label)}</b><br><span>${esc(o.description || "")}</span></div></label>`).join("");
+    const custom = qi.custom ? `<input type="text" data-custom="${n}" placeholder="Свой ответ…">` : "";
+    return `<div class="title">${esc(qi.header || "Вопрос")}</div><div class="text">${fmt(qi.question || "")}</div><div class="opts">${opts}${custom}</div>`;
+  }).join("<hr>");
+  return `<div class="q" data-qid="${q.id}">${ICON_Q}<div class="body2">${blocks}
+    <div class="actions"><button type="button" data-qact="reject">Отклонить</button><button type="button" class="primary" data-qact="reply">Ответить</button></div></div></div>`;
+}
+function renderMessages(d) {
+  const calls = {};
+  d.messages.forEach(m => m.parts.forEach(p => { if (p.type === "tool" && p.callID) calls[p.callID] = p; }));
+  const html = d.messages.map(m => {
+    const time = m.time ? new Date(m.time).toLocaleTimeString("ru", {hour:"2-digit", minute:"2-digit"}) : "";
+    if (m.role === "user") {
+      const text = m.parts.filter(p => p.type === "text").map(p => p.text).join("\n");
+      return `<div class="user"><div><div class="meta" style="text-align:right">${time}</div><div class="b">${esc(text)}</div></div></div>`;
+    }
+    const parts = m.parts.map(p => {
+      if (p.type === "text") return `<div class="agent">${fmt(p.text)}</div>`;
+      if (p.type === "reasoning") return `<details class="reason"><summary>ход мыслей ›</summary><pre>${esc(p.text)}</pre></details>`;
+      if (p.type === "tool") {
+        const icon = p.status === "completed" ? ICON.ok : p.status === "error" ? ICON.err : ICON.run;
+        const dur = p.time?.start && p.time?.end ? ` · ${((p.time.end - p.time.start)/1000).toFixed(1)} с` : "";
+        const name = (p.tool || "").replace(/^target-host_/, "");
+        const brief = p.input?.cmd || p.input?.path || p.input?.action || p.input?.query || (p.input?.script ? (p.input.language || "python") + ": " + p.input.script.split("\n")[0] : "") || p.input?.what || "";
+        const dev = p.input?.device || p.input?.target;
+        return `<details class="tool ${toolClass(name)}"><summary>${icon}<span><b>${esc(name)}</b>${dev ? " · " + esc(dev) : ""}${dur}${brief ? ` · <span class="mono">${esc(brief).slice(0, 90)}</span>` : ""}</span></summary><pre>${esc(p.output || "(нет вывода)")}</pre></details>`;
+      }
+      return "";
+    }).join("");
+    const err = m.error ? `<div class="err">Ошибка: ${esc(m.error)}</div>` : "";
+    return `<div><div class="meta">Агент · ${time}</div><div style="display:flex;flex-direction:column;gap:8px">${parts}${err}</div></div>`;
+  }).join("") + d.pending.map(p => renderPerm(p, calls)).join("") + (d.questions || []).map(renderQuestion).join("");
+  if (html !== lastHTML) {
+    $("#log").innerHTML = html; lastHTML = html;
+    if (stickBottom) scrollToBottom();
+  }
+  $("#busy").style.display = d.busy ? "" : "none";
+  $("#abort").style.display = d.busy ? "" : "none";
+  // watchdog: a turn that has produced nothing visible for a long time is usually a runaway reasoning loop
+  if (d.busy) { if (!busySince) busySince = Date.now(); const mins = Math.floor((Date.now() - busySince) / 60000);
+    $("#busy").textContent = mins >= 3 ? `думает уже ${mins} мин — если ничего не появляется, нажмите Стоп и переформулируйте` : "думает…"; }
+  else busySince = null;
+  $("#send").disabled = !sid;
+}
+
+// ---------- auto-scroll ----------
+let stickBottom = true;
+const log = $("#log");
+const scrollToBottom = () => { log.scrollTop = log.scrollHeight; stickBottom = true; $("#toBottom").style.display = "none"; };
+log.addEventListener("scroll", () => { const near = log.scrollTop + log.clientHeight >= log.scrollHeight - 60; stickBottom = near; $("#toBottom").style.display = near ? "none" : ""; });
+$("#toBottom").onclick = scrollToBottom;
+
+async function poll() {
+  if (!sid || view !== "chat") return;
+  try { renderMessages(await api(`/api/session/${sid}`)); }
+  catch (e) { $("#log").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+function selectSession(id) {
+  sid = id; lastHTML = ""; stickBottom = true; busySince = null; $("#log").innerHTML = "";   // clean slate until the session's own messages arrive
+  document.querySelectorAll(".sessions a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#"+id));
+  showView("chat"); poll();
+}
+
+// ---------- views: chat / audit ----------
+let view = "chat";
+function showView(v) {
+  view = v;
+  $("#tabChat").classList.toggle("active", v === "chat"); $("#tabAudit").classList.toggle("active", v === "audit");
+  $("#log").style.display = v === "chat" ? "" : "none"; $("#form").style.display = v === "chat" ? "" : "none";
+  $("#audit").style.display = v === "audit" ? "" : "none";
+  if (v === "audit") loadAudit();
+}
+async function loadAudit() {
+  try {
+    const a = await api("/api/audit?n=200");
+    $("#audit").innerHTML = `<div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px"><a class="btn" href="/api/audit/export?format=csv" download><button type="button">Экспорт CSV</button></a><a href="/api/audit/export" download><button type="button">Экспорт JSONL</button></a></div><table><thead><tr><th>Время</th><th>Цель</th><th>Инструмент</th><th>Команда / файл</th><th>Результат</th></tr></thead><tbody>` +
+      a.map(e => `<tr><td>${esc((e.ts||"").replace("T"," ").slice(0,19))}</td><td>${esc(e.target||"")}</td><td>${esc(e.tool||"")}</td><td class="c">${esc(e.cmd||e.path||"")}${e.reason ? `<div style="color:var(--muted)">${esc(e.reason)}</div>` : ""}</td><td>${e.rejected ? '<span class="rej">отклонено защитой</span>' : e.rc != null ? "rc=" + e.rc : ""}</td></tr>`).join("") +
+      `</tbody></table>`;
+  } catch (e) { $("#audit").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+$("#tabChat").onclick = () => showView("chat"); $("#tabAudit").onclick = () => showView("audit");
+$("#exportSession").onclick = () => { if (sid) location.href = `/api/session/${sid}/export`; };
+
+// ---------- model profile toggle ----------
+let switching = null;
+$("#profile").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-prof]"); if (!b || b.classList.contains("active")) return;
+  const p = b.dataset.prof;
+  if (!confirm(`Переключить модель на «${p}»? Текущая выгрузится, загрузка новой займёт 5–8 минут; идущий ответ агента прервётся.`)) return;
+  try { await api("/api/model", {method:"POST", body: JSON.stringify({profile: p})}); switching = p; refreshState(); }
+  catch (err) { alert("Не удалось переключить: " + err.message); }
+});
+function renderProfile(s) {
+  const active = s.profiles.fast === "active" ? "fast" : s.profiles.deep === "active" ? "deep" : null;
+  const activating = s.profiles.fast === "activating" ? "fast" : s.profiles.deep === "activating" ? "deep" : null;
+  if (s.llm.up) switching = null;
+  document.querySelectorAll("#profile button").forEach(b => {
+    const p = b.dataset.prof;
+    b.classList.toggle("active", s.llm.up && p === active);
+    b.classList.toggle("loading", !s.llm.up && (p === activating || p === active || p === switching));
+    b.textContent = (!s.llm.up && (p === activating || p === active || p === switching)) ? p + "…" : p;
+  });
+}
+
+// ---------- actions ----------
+window.addEventListener("hashchange", () => selectSession(location.hash.slice(1)));
+$("#newSession").onclick = async () => { const s = await api("/api/session", {method:"POST", body: JSON.stringify({title: "Сессия " + new Date().toLocaleString("ru", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"})})}); await refreshState(); location.hash = s.id; };
+$("#form").onsubmit = async e => {
+  e.preventDefault(); const text = $("#input").value.trim(); if (!text || !sid) return;
+  $("#input").value = ""; stickBottom = true; await api(`/api/session/${sid}/prompt`, {method:"POST", body: JSON.stringify({text})}); poll();
+};
+$("#input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form").requestSubmit(); } });
+$("#abort").onclick = () => api(`/api/session/${sid}/abort`, {method:"POST"});
+$("#log").addEventListener("click", async e => {
+  const qb = e.target.closest("button[data-qact]");
+  if (qb) {
+    const card = qb.closest(".q"), qid = card.dataset.qid;
+    if (qb.dataset.qact === "reject") { await api(`/api/session/${sid}/question/${qid}`, {method:"POST", body: JSON.stringify({reject: true})}); poll(); return; }
+    const n = Math.max(1, new Set([...card.querySelectorAll("[data-q]")].map(x => x.dataset.q)).size || 1);
+    const answers = [];
+    for (let i = 0; i < n; i++) {
+      const picked = [...card.querySelectorAll(`input[name="q${qid}_${i}"]:checked`)].map(x => x.value);
+      const custom = card.querySelector(`input[data-custom="${i}"]`)?.value.trim();
+      if (custom) picked.push(custom);
+      answers.push(picked);
+    }
+    if (answers.every(a => !a.length)) { alert("Выберите вариант или впишите ответ"); return; }
+    card.querySelectorAll("button").forEach(x => x.disabled = true);
+    await api(`/api/session/${sid}/question/${qid}`, {method:"POST", body: JSON.stringify({answers})}); poll(); return;
+  }
+  const b = e.target.closest("button[data-resp]"); if (!b) return;
+  const pid = b.closest(".perm").dataset.pid; b.closest(".actions").querySelectorAll("button").forEach(x => x.disabled = true);
+  try { await api(`/api/session/${sid}/permission/${pid}`, {method:"POST", body: JSON.stringify({response: b.dataset.resp})}); }
+  catch (err) { alert(/409/.test(err.message) ? "Актуация одобряется каждый раз отдельно — нажмите «Разрешить этот раз»." : "Не удалось ответить: " + err.message); b.closest(".actions").querySelectorAll("button").forEach(x => x.disabled = false); }
+  poll();
+});
+
+refreshState(); if (sid) selectSession(sid);
+setInterval(poll, 1500); setInterval(refreshState, 10000);
+
+// ---------- PWA ----------
+if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js").catch(() => {});
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; $("#installPwa").style.display = ""; });
+$("#installPwa").onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $("#installPwa").style.display = "none"; };
+window.addEventListener("appinstalled", () => { $("#installPwa").style.display = "none"; });
+
+// ---------- Offline voice input (browser-side Whisper; text lands in the input box, operator sends it) ----------
+const stt = { worker: null, ready: false, loading: false, recording: false, ctx: null, stream: null, node: null, chunks: [], model: null, pendingAudio: null };
+const setStt = (t, show=true) => { $("#sttStatus").textContent = t; $("#sttStatus").style.display = show && t ? "" : "none"; };
+async function initVoice() {
+  let f; try { f = await api("/api/features"); } catch { return; }
+  const isLocal = ["localhost","127.0.0.1"].includes(location.hostname);
+  if (!window.isSecureContext && f.tls && !isLocal) {
+    $("#hint").innerHTML = `Микрофон и установка как приложения работают только по HTTPS: <a href="https://${location.hostname}:${f.tls_port}/">https://${location.hostname}:${f.tls_port}/</a> — один раз установите сертификат <a href="/ca.crt">ca.crt</a> на этом устройстве.`;
+    $("#hint").style.display = ""; return;
+  }
+  if (!f.stt || !window.isSecureContext || !navigator.mediaDevices?.getUserMedia) return;
+  stt.model = f.stt_model; $("#mic").style.display = "";
+}
+function ensureWorker() {
+  if (stt.worker) return;
+  stt.worker = new Worker("/static/stt-worker.js", { type: "module" });
+  stt.worker.onmessage = ({ data }) => {
+    if (data.type === "progress" && data.status === "progress") setStt(`загрузка модели распознавания: ${data.file?.split("/").pop()} ${Math.round(data.progress || 0)}%`);
+    if (data.type === "ready") { stt.ready = true; stt.loading = false; setStt(`распознавание готово (${data.device === "webgpu" ? "GPU" : "CPU"})`); setTimeout(() => setStt(""), 2500); if (stt.pendingAudio) { transcribe(stt.pendingAudio); stt.pendingAudio = null; } }
+    if (data.type === "result") { setStt(""); const t = $("#input"); t.value = (t.value ? t.value.replace(/\s*$/, " ") : "") + data.text; t.focus(); }
+    if (data.type === "error") { stt.loading = false; setStt("ошибка распознавания: " + data.message); }
+  };
+  stt.worker.onerror = e => setStt("ошибка модуля распознавания: " + (e.message || "см. консоль"));
+  stt.loading = true; setStt("загрузка модели распознавания…");
+  stt.worker.postMessage({ type: "load", model: stt.model });
+}
+function transcribe(audio) {
+  if (!stt.ready) { stt.pendingAudio = audio; ensureWorker(); return; }
+  setStt(`распознаю (${(audio.length / 16000).toFixed(1)} с)…`);
+  stt.worker.postMessage({ type: "transcribe", audio, language: "russian" }, [audio.buffer]);
+}
+async function startRec() {
+  ensureWorker();
+  try { stt.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } }); }
+  catch (e) { setStt("нет доступа к микрофону: " + e.message); return; }
+  stt.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  const src = stt.ctx.createMediaStreamSource(stt.stream);
+  stt.node = stt.ctx.createScriptProcessor(4096, 1, 1); stt.chunks = [];
+  stt.node.onaudioprocess = e => { if (stt.recording) stt.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
+  src.connect(stt.node); stt.node.connect(stt.ctx.destination);
+  stt.recording = true; $("#mic").classList.add("rec"); setStt("слушаю… нажми ещё раз, чтобы закончить");
+}
+async function stopRec() {
+  stt.recording = false; $("#mic").classList.remove("rec");
+  stt.node?.disconnect(); stt.stream?.getTracks().forEach(t => t.stop()); await stt.ctx?.close();
+  const n = stt.chunks.reduce((a, c) => a + c.length, 0);
+  if (stt.ctx && stt.ctx.sampleRate !== 16000) { setStt("браузер не дал 16 кГц, повтори"); return; }
+  if (n < 16000 * 0.5) { setStt("слишком коротко"); return; }
+  const audio = new Float32Array(n); let o = 0; for (const c of stt.chunks) { audio.set(c, o); o += c.length; }
+  stt.chunks = []; transcribe(audio);
+}
+$("#mic").onclick = () => stt.recording ? stopRec() : startRec();
+document.addEventListener("keydown", e => {
+  if (e.code === "Space" && !["INPUT","TEXTAREA","BUTTON"].includes(document.activeElement?.tagName) && $("#mic").style.display !== "none" && !e.repeat) { e.preventDefault(); $("#mic").click(); }
+});
+// Self-test without a microphone: ?stt_test=/static/vendor/test.wav transcribes that file into the input box.
+const sttTest = new URLSearchParams(location.search).get("stt_test");
+initVoice().then(async () => {
+  if (!sttTest) return;
+  const f = await api("/api/features"); stt.model = f.stt_model;
+  const buf = await (await fetch(sttTest)).arrayBuffer();
+  const ctx = new OfflineAudioContext(1, 16000 * 60, 16000);
+  const dec = await ctx.decodeAudioData(buf);
+  transcribe(new Float32Array(dec.getChannelData(0).subarray(0, Math.ceil(dec.duration * 16000))));
+});
+</script>
+</body>
+</html>

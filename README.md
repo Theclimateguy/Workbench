@@ -18,6 +18,7 @@
 | [PLAN.md](PLAN.md) | состояние проекта и план развития до «универсального инженера» |
 | [docs/bench-log.md](docs/bench-log.md) | замеры моделей на GB10 |
 | [docs/eval-log.md](docs/eval-log.md), [tests/eval/README.md](tests/eval/README.md) | стенд приёмки: кейсы с поломками, автопрогон, результаты |
+| [docs/ui-v2-plan.md](docs/ui-v2-plan.md) | web-интерфейс v2: принципы, архитектура, мокапы, что реализовано |
 
 ## Быстрый старт на новом устройстве
 
@@ -32,7 +33,7 @@ cd ~/Workbench && ./install/bootstrap.sh --with-deep
 
 ```
 install/      bootstrap.sh (установка с нуля), deploy.sh (обновление софта), fetch-models.sh, fetch-ui-assets.sh, gen-certs.sh, versions.lock
-agent/        bin/ (support-ctl, support-priv, resolve, onboarding), mcp/ (target-host + connectors.py), ui/ (web + PWA + офлайн-голос), workspace/ (конфиг агента), desktop/
+agent/        bin/ (support-ctl, support-priv, resolve, onboarding), mcp/ (target-host + connectors.py), ui/ (web v2 + classic + PWA + офлайн-голос + схемы), workspace/ (конфиг агента), desktop/
 stack/        compose.yaml + env/ (профили LLM), systemd/, net/ (netplan-профили lan/direct), workbench/ (Dockerfile песочницы)
 tests/        bench.py (tok/s, TTFT, tool-call), mcp_smoke.py, connectors_smoke.py (симуляторы устройств + песочница), eval/ (стенд приёмки)
 docs/         мануал (md + PDF, сборка `make manual`), DEPLOY, ARCHITECTURE, bench-log, eval-log, ui-v2-plan

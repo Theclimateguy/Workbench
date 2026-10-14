@@ -42,7 +42,21 @@ STATIC_DIR = Path(__file__).parent / "static"
 ASSETS_DIR = Path(os.environ.get("SUPPORT_UI_ASSETS", "/opt/support/ui-assets"))
 TLS_DIR = Path(os.environ.get("SUPPORT_TLS_DIR", "/etc/support/tls"))
 INDEX_HTML = (Path(__file__).parent / "index.html").read_text()
+CLASSIC_HTML = (Path(__file__).parent / "classic.html").read_text()
 PUBLIC_PATHS = ("/ca.crt", "/sw.js", "/static/manifest.json", "/static/icons/")   # no login needed
+MCP_DIR = Path(os.environ.get("SUPPORT_MCP_DIR", str(Path(__file__).parent.parent / "mcp")))
+SUPPORT_CTL = os.environ.get("SUPPORT_CTL", "/usr/local/bin/support-ctl")
+STACK_DIR = Path(os.environ.get("SUPPORT_STACK_DIR", "/opt/support-stack"))
+
+
+def _target_host():
+    """The MCP server module, imported in-process so the UI can show a device passport / operator console
+    without going through the agent. Same allowlists, same audit log."""
+    import importlib
+    import sys
+    if str(MCP_DIR) not in sys.path:
+        sys.path.insert(0, str(MCP_DIR))
+    return importlib.import_module("target_host")
 
 app = FastAPI(title="support-ui")
 client = httpx.AsyncClient(base_url=OPENCODE_URL, auth=(OC_USER, OC_PASS) if OC_PASS else None,
@@ -160,6 +174,12 @@ async def index():
     return INDEX_HTML
 
 
+@app.get("/classic", response_class=HTMLResponse)
+async def classic():
+    """The pre-v2 single-column UI, kept as a fallback."""
+    return CLASSIC_HTML
+
+
 @app.get("/sw.js")
 async def service_worker():
     """Served from the root so the worker's scope covers the whole app (a /static/ URL would only cover /static/)."""
@@ -184,6 +204,7 @@ async def features():
         "stt": bool(model_dir) and (ASSETS_DIR / "vendor" / "transformers.min.js").exists(),
         "stt_model": model_dir.name if model_dir else None,
         "tls": (TLS_DIR / "server.crt").exists(), "tls_port": int(os.environ.get("SUPPORT_UI_TLS_PORT", "8443")),
+        "mermaid": (ASSETS_DIR / "vendor" / "mermaid.min.js").exists(),
     }
 
 
@@ -212,13 +233,62 @@ async def state():
     for prof in ("fast", "deep"):
         profiles[prof] = subprocess.run(["systemctl", "is-active", f"llm@{prof}"], capture_output=True,
                                         text=True).stdout.strip()
+    status = {}
+    try:
+        status = (await oc("GET", "/session/status")).json()
+    except HTTPException:
+        pass
     return {
-        "sessions": [{"id": s["id"], "title": s.get("title", ""), "updated": s.get("time", {}).get("updated")}
-                     for s in sessions[:50]],
-        "pending": perms, "llm": llm, "profiles": profiles,
-        "targets": _targets(), "docs": _docs_status(),
+        "sessions": [{"id": s["id"], "title": s.get("title", ""), "updated": s.get("time", {}).get("updated"),
+                      "busy": bool(status.get(s["id"])) and (status.get(s["id"]) or {}).get("type") not in (None, "idle")}
+                     for s in sessions[:80]],
+        "pending": perms, "llm": llm, "profiles": profiles, "models": _model_names(),
+        "targets": _targets(), "docs": _docs_status(), "box": _box_status(),
         "classes": {"actuation": sorted(ACTUATION_TOOLS), "config": sorted(CONFIG_TOOLS)},
     }
+
+
+_box_cache: dict = {"at": 0.0, "v": {}}
+
+
+def _box_status() -> dict:
+    """Memory and RJ45 link of the Workbench box for the status strip (cached 5 s)."""
+    import time
+    if time.time() - _box_cache["at"] < 5:
+        return _box_cache["v"]
+    v: dict = {"host": os.uname().nodename}
+    try:
+        mi = {ln.split(":")[0]: int(ln.split()[1]) for ln in Path("/proc/meminfo").read_text().splitlines() if ":" in ln}
+        v["mem_total_gib"] = round(mi["MemTotal"] / 1048576, 1)
+        v["mem_used_gib"] = round((mi["MemTotal"] - mi["MemAvailable"]) / 1048576, 1)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        rj = subprocess.run(["sh", "-c", "ip -o link | awk -F': ' '$2 ~ /^en/ && $2 !~ /docker|veth|br-/ {print $2}' | head -1"],
+                            capture_output=True, text=True, timeout=3).stdout.strip()
+        if rj:
+            st = subprocess.run(["nmcli", "-g", "GENERAL.STATE,GENERAL.CONNECTION,IP4.ADDRESS", "device", "show", rj],
+                                capture_output=True, text=True, timeout=3).stdout.strip().splitlines()
+            v["link"] = {"iface": rj, "state": st[0] if st else "", "profile": st[1] if len(st) > 1 else "",
+                         "addr": st[2] if len(st) > 2 else ""}
+    except Exception:  # noqa: BLE001
+        pass
+    _box_cache.update(at=time.time(), v=v)
+    return v
+
+
+def _model_names() -> dict:
+    """Human names of the profiles from stack env files (MODEL_PATH basename)."""
+    out = {}
+    for prof in ("fast", "deep"):
+        env = STACK_DIR / "env" / f"{prof}.env"
+        name = ""
+        if env.exists():
+            for ln in env.read_text().splitlines():
+                if ln.startswith("MODEL_PATH="):
+                    name = ln.split("=", 1)[1].strip().rsplit("/", 1)[-1]
+        out[prof] = name
+    return out
 
 
 @app.post("/api/session")
@@ -343,6 +413,104 @@ async def switch_model(body: dict):
         raise HTTPException(500, f"cannot start llm@{prof}: {(r.stderr or r.stdout).strip()[:200]}")
     _active_model.update(at=0.0)
     return {"ok": True, "profile": prof}
+
+
+# ---------- device passport / operator console (in-process MCP module, same allowlists + audit) ----------
+
+@app.get("/api/device/{name}")
+async def device_info(name: str):
+    th = _target_host()
+    try:
+        cfg = th._load_target(name)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+    import connectors
+    return {"name": name, "type": cfg["TYPE"], "where": connectors.describe(cfg),
+            "cfg": {k: v for k, v in cfg.items() if k not in ("KEY", "NAME")}}
+
+
+@app.post("/api/device/{name}/facts")
+async def device_facts(name: str, body: dict | None = None):
+    """Passport: collect_facts for ssh devices, a default observe for the rest. Runs as the operator (audited)."""
+    th = _target_host()
+    try:
+        cfg = th._load_target(name)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+    import time
+    t0 = time.time()
+    if cfg["TYPE"] == "ssh":
+        text = await th.collect_facts(name)
+    else:
+        q = (body or {}).get("query") or {"serial": "", "can": "dump", "modbus": "holding 0 10", "http": "GET /"}[cfg["TYPE"]]
+        text = await th.observe(name, q, float((body or {}).get("seconds") or 2))
+    return {"name": name, "type": cfg["TYPE"], "text": text, "seconds": round(time.time() - t0, 1),
+            "sections": _parse_facts(text) if cfg["TYPE"] == "ssh" else {}}
+
+
+def _parse_facts(text: str) -> dict:
+    """Split collect_facts output ('### title' blocks) into {title: body}."""
+    out, cur = {}, None
+    for ln in text.splitlines():
+        if ln.startswith("### "):
+            cur = ln[4:].strip(); out[cur] = []
+        elif cur is not None:
+            out[cur].append(ln)
+    return {k: "\n".join(v).strip() for k, v in out.items()}
+
+
+@app.post("/api/device/{name}/run")
+async def device_run(name: str, body: dict):
+    """Operator console: a READ-class command on the device (run_readonly allowlist / observe). Audited as operator."""
+    cmd = (body or {}).get("cmd", "").strip()
+    if not cmd:
+        raise HTTPException(400, "empty command")
+    th = _target_host()
+    try:
+        cfg = th._load_target(name)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+    import time
+    t0 = time.time()
+    text = await (th.run_readonly(cmd, name) if cfg["TYPE"] == "ssh" else th.observe(name, cmd, float((body or {}).get("seconds") or 3)))
+    th._audit({"tool": "console", "target": name, "cmd": cmd, "by": "operator", "rc": 0 if not text.startswith(("REJECTED", "ERROR")) else 1})
+    return {"text": text, "seconds": round(time.time() - t0, 1), "rejected": text.startswith("REJECTED")}
+
+
+@app.post("/api/scan")
+async def scan(body: dict | None = None):
+    what = (body or {}).get("what") or "all"
+    if what not in ("all", "usb", "serial", "can", "net", "mdns"):
+        raise HTTPException(400, "what must be all|usb|serial|can|net|mdns")
+    try:
+        r = subprocess.run([SUPPORT_CTL, "scan", what], capture_output=True, text=True, timeout=120)
+        text = r.stdout + r.stderr
+    except Exception as e:  # noqa: BLE001
+        text = f"ERROR: {e}"
+    sections, cur = {}, None
+    for ln in text.splitlines():
+        if ln.startswith("== "):
+            cur = ln[3:].strip(); sections[cur] = []
+        elif cur is not None:
+            sections[cur].append(ln.rstrip())
+    return {"text": text, "sections": {k: "\n".join(v).strip() for k, v in sections.items()}}
+
+
+@app.get("/api/device/{name}/report")
+async def device_report(name: str):
+    """Device passport as Markdown (facts + scan), for the session report."""
+    import datetime as dt
+    th = _target_host()
+    try:
+        cfg = th._load_target(name)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+    import connectors
+    facts = await th.collect_facts(name) if cfg["TYPE"] == "ssh" else await th.observe(name, "", 2)
+    stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    md = [f"# Паспорт устройства {name}", "", f"{connectors.describe(cfg)} · собрано {stamp} с {os.uname().nodename}", "", "```", facts, "```", ""]
+    return Response("\n".join(md), media_type="text/markdown; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="passport-{name}-{dt.datetime.now().strftime("%Y%m%d-%H%M")}.md"'})
 
 
 @app.get("/api/audit/export")
