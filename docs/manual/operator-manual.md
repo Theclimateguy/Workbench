@@ -350,7 +350,6 @@ ssh admin@10.77.0.1 -t support-ctl agent
 | `support-ctl device list` / `add ИМЯ ТИП КЛЮЧ=ЗНАЧЕНИЕ…` / `test ИМЯ` / `rm ИМЯ` | другие устройства: serial, can, modbus, http (раздел «Другие устройства») |
 | `support-ctl scan [usb\|serial\|can\|net\|mdns]` | что подключено: USB, порты, CAN, хосты в сети, mDNS |
 | `support-ctl workbench status` / `build` | песочница для скриптов агента (сборка — в офисе, с интернетом) |
-| `support-ctl tunnel on USER@VPS` / `off` / `status` / `key` | обратный туннель до своего VPS (Приложение А3) |
 | `support-ctl model fast` / `deep` | переключить модель |
 | `support-ctl docs status` / `reload` | документация для агента |
 | `support-ctl web [пароль]` | (пере)запустить web-интерфейс, сменить пароль |
@@ -410,22 +409,6 @@ userdel -r support-agent; rm -f /etc/sudoers.d/90-support-agent /etc/ssh/sshd_co
 | `http` | `URL=http://адрес[:порт]` | `AUTH=логин:пароль`, `TOKEN=…` (Bearer), `VERIFY=0` (самоподписанный сертификат) |
 
 Файл устройства — `/opt/support/targets/ИМЯ.env`, его можно править руками. Порт serial лучше указывать по `/dev/serial/by-id/` (посмотреть: `support-ctl scan serial`), тогда номер `ttyUSB` не важен.
-
-# Приложение А3. Удалённый доступ к Spark через свой VPS
-
-Spark остаётся дома/в офисе, с собой — только ноутбук. Spark сам держит обратный SSH-туннель до вашего VPS (наружу ничего не открывается: порты висят на `127.0.0.1` VPS), а ноутбук заходит на VPS.
-
-1. На VPS один раз: пользователь без shell и ключ Spark.
-   ```
-   sudo useradd -m -s /usr/sbin/nologin spark-tunnel
-   sudo install -d -m 700 -o spark-tunnel -g spark-tunnel /home/spark-tunnel/.ssh
-   ```
-   В `sshd_config`: `ClientAliveInterval 30`, `ClientAliveCountMax 3` (чтобы оборванный туннель освобождал порты), `sudo systemctl reload ssh`.
-2. На Spark: `support-ctl tunnel key` — напечатает строку для `/home/spark-tunnel/.ssh/authorized_keys` на VPS (с `restrict,port-forwarding` — только проброс портов).
-3. На Spark: `support-ctl tunnel on spark-tunnel@АДРЕС_VPS` — создаёт службу `workbench-tunnel`, она стартует при загрузке и переподключается сама. Проверка: `support-ctl tunnel status`.
-4. На ноутбуке: `ssh -N -L 18080:127.0.0.1:18080 -L 2222:127.0.0.1:2222 ВАШ_ПОЛЬЗОВАТЕЛЬ@АДРЕС_VPS`, затем http://localhost:18080 (без пароля — для Spark это локальный запрос) и `ssh -p 2222 оператор@localhost` для терминала Spark.
-
-Выключить: `support-ctl tunnel off`. Если VPS не только ваш — пробрасывайте HTTPS-порт `8443` вместо `8080` (логин `support`), чтобы другие пользователи VPS не попали в интерфейс.
 
 # Приложение Б. Сетевой порт workstation для прямого кабеля
 

@@ -9,7 +9,6 @@
 #   support-ctl device list|test NAME|rm NAME
 #   support-ctl scan [all|usb|serial|can|net|mdns]   what is physically around: USB, serial ports, CAN, hosts per link, mDNS
 #   support-ctl workbench build|status|runs   sandbox image for agent scripts (build needs internet once)
-#   support-ctl tunnel on USER@VPS [UI_PORT] [SSH_PORT] | off | status | key   reverse SSH tunnel to a relay VPS (web UI + ssh from anywhere)
 #   support-ctl docs status|reload          token estimate for docs/; reload = restart the agent engine to pick up new docs
 #   support-ctl net status|peers|lan|direct RJ45 mode (auto: lan→direct fallback) and hosts on the direct link
 #   support-ctl net hotspot on|off|auto on|auto off   Wi-Fi access point Workbench-Support; auto = start at boot when no known Wi-Fi is around
@@ -58,7 +57,6 @@ cmd_status() {
   echo "  http://$(hostname).local:8080  (mDNS, с ноутбука в той же сети/хотспоте)"
   echo "== Devices"; cmd_device list
   echo "== Workbench"; cmd_workbench status
-  echo "== Tunnel"; cmd_tunnel status
   echo "== Docs"; cmd_docs status
   echo "== Audit: $([ -f /var/log/support/audit.jsonl ] && wc -l < /var/log/support/audit.jsonl || echo 0) entries"
 }
@@ -244,34 +242,6 @@ cmd_workbench() {
   esac
 }
 
-cmd_tunnel() {
-  local sub=${1:-status} KEYF=/etc/support/tunnel_ed25519 ENVF=/etc/support/tunnel.env
-  ensure_tkey() {
-    sudo install -d -m 755 /etc/support
-    sudo test -f "$KEYF" || { sudo ssh-keygen -q -t ed25519 -N "" -C "workbench-tunnel@$(hostname)" -f "$KEYF"; sudo chmod 600 "$KEYF"; echo "  generated $KEYF"; }
-  }
-  case "$sub" in
-    key) ensure_tkey; echo "  add this line to ~/.ssh/authorized_keys of the tunnel user on the VPS:"; echo "restrict,port-forwarding $(sudo cat "$KEYF.pub")" ;;
-    on)
-      local target=${2:-} ui=${3:-18080} sshp=${4:-2222}
-      [[ "$target" == *@* ]] || die "usage: support-ctl tunnel on USER@VPS_HOST [UI_PORT=18080] [SSH_PORT=2222]"
-      ensure_tkey
-      printf 'TUNNEL_TARGET=%s\nTUNNEL_UI_PORT=%s\nTUNNEL_SSH_PORT=%s\n' "$target" "$ui" "$sshp" | sudo tee "$ENVF" >/dev/null; sudo chmod 600 "$ENVF"
-      sudo systemctl daemon-reload; sudo systemctl enable --now workbench-tunnel >/dev/null
-      echo "  tunnel enabled: $target  (web UI -> 127.0.0.1:$ui on the VPS, ssh -> 127.0.0.1:$sshp)"
-      echo "  from a laptop:  ssh -N -L $ui:127.0.0.1:$ui -L $sshp:127.0.0.1:$sshp ${target#*@}   then http://localhost:$ui"
-      sleep 5; cmd_tunnel status ;;
-    off) sudo systemctl disable --now workbench-tunnel >/dev/null 2>&1; sudo rm -f "$ENVF"; echo "  tunnel disabled" ;;
-    status)
-      sudo test -s "$ENVF" || { echo "  tunnel: not configured (support-ctl tunnel on USER@VPS)"; return; }
-      # shellcheck disable=SC1090
-      ( . <(sudo cat "$ENVF"); echo "  target: $TUNNEL_TARGET  ui->:$TUNNEL_UI_PORT  ssh->:$TUNNEL_SSH_PORT" )
-      echo "  unit: $(systemctl is-active workbench-tunnel 2>/dev/null) (enabled: $(systemctl is-enabled workbench-tunnel 2>/dev/null))"
-      journalctl -u workbench-tunnel --no-pager -n 3 -o cat 2>/dev/null | sed 's/^/  log: /' ;;
-    *) die "usage: support-ctl tunnel on USER@VPS [UI_PORT] [SSH_PORT] | off | status | key" ;;
-  esac
-}
-
 cmd_docs() {
   local sub=${1:-status}
   case "$sub" in
@@ -426,7 +396,6 @@ case "${1:-}" in
   device) shift; cmd_device "$@" ;;
   scan)   shift; cmd_scan "$@" ;;
   workbench) shift; cmd_workbench "$@" ;;
-  tunnel) shift; cmd_tunnel "$@" ;;
   docs)   shift; cmd_docs "$@" ;;
   net)    shift; cmd_net "$@" ;;
   agent)  shift; cmd_agent "$@" ;;
