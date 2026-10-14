@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-ui="classic" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,7 +9,7 @@
 <link rel="icon" href="/static/icons/icon-32.png" type="image/png" sizes="32x32">
 <link rel="icon" href="/static/icons/icon-48.png" type="image/png" sizes="48x48">
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-<meta name="theme-color" content="#ECECEE">
+<meta name="theme-color" content="#04070b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <script src="/static/lib/marked.umd.js"></script>
@@ -114,6 +114,8 @@
   .rej { color:var(--bad) }
   @media (max-width: 860px) { aside { display:none } .topbar .brand { width:auto } .right { min-width:0 } .chip span.l { display:none } }
 </style>
+<link rel="stylesheet" href="/static/fonts/fonts.css">
+<link rel="stylesheet" href="/static/terran.css">
 </head>
 <body>
 <div class="app">
@@ -182,9 +184,8 @@ const ICON = {
 };
 
 // ---------- theme ----------
-const applyTheme = t => { document.documentElement.dataset.theme = t; try { localStorage.setItem("theme", t); } catch {} };
-try { applyTheme(localStorage.getItem("theme") || "light"); } catch { applyTheme("light"); }
-$("#theme").onclick = () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+// Terran theme (static/terran.css) is dark only; the light/dark toggle is hidden
+document.documentElement.dataset.theme = "dark";
 
 // ---------- state / sidebar ----------
 async function refreshState() {

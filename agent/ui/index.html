@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-ui="v2" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,7 +9,7 @@
 <link rel="icon" href="/static/icons/icon-32.png" type="image/png" sizes="32x32">
 <link rel="icon" href="/static/icons/icon-48.png" type="image/png" sizes="48x48">
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-<meta name="theme-color" content="#F3F4F6">
+<meta name="theme-color" content="#04070b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <script src="/static/lib/marked.umd.js"></script>
@@ -155,6 +155,8 @@
   @media (max-width: 1100px) { .panel { display:none } .panel.open { display:flex; position:absolute; left:56px; top:0; bottom:0; z-index:5; box-shadow:var(--shadow) } .dockToggle { display:inline-flex } .dock { display:none } .dock.open { display:flex; position:absolute; right:0; top:0; bottom:0; z-index:4; width:min(460px, 85vw) } .strip .mem, .strip .hostchip { display:none } }
   @media (max-width: 767px) { .rail { display:none } .dock.open { left:0; width:auto; top:30%; border-top:1px solid var(--bd2); border-radius:14px 14px 0 0 } .strip .modelchip .l2 { display:none } .perm .actions button { flex:1 } }
 </style>
+<link rel="stylesheet" href="/static/fonts/fonts.css">
+<link rel="stylesheet" href="/static/terran.css">
 </head>
 <body>
 <div class="app">
@@ -261,9 +263,9 @@ const EFFECT = { run_change: "Команда выполнится на устр�
 
 // ---------- global state ----------
 let sid = location.hash.slice(1) || null, lastHTML = "", lastData = null, busySince = null, stateCache = null, targetName = "";
-const applyTheme = t => { document.documentElement.dataset.theme = t; store.set("theme", t); document.querySelector('meta[name=theme-color]').content = t === "dark" ? "#111827" : "#F3F4F6"; };
-applyTheme(store.get("theme", "light"));
-$("#theme").onclick = () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+// Terran theme (static/terran.css) is dark only; the light/dark toggle is hidden
+const applyTheme = t => { document.documentElement.dataset.theme = t; };
+applyTheme("dark");
 
 // ---------- approval mode (graduated autonomy as a UI element, not a setting) ----------
 let mode = store.get("mode", "ask");
