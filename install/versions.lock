@@ -17,7 +17,9 @@ MODEL_FAST="nvidia/Qwen3.6-35B-A3B-NVFP4|1355db6a052410cfd62085d94b58866fd0f2c3c
 # deep = gpt-oss-120b (MXFP4, ~61 GiB on disk after excluding original/ and metal/); replaced Nemotron 3 Super on 2026-10-13
 # (Nemotron: 75 GiB + 24 GiB KV left ~5 GB for the OS, ~20 tok/s; see docs/bench-log.md).
 MODEL_DEEP="openai/gpt-oss-120b|b5c939de8f754692c1647ca79fbf85e8c1e70f8a|gpt-oss-120b|61"
-# previous deep, kept for reference / rollback: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4@ff433f5493e25d631c9f12b5d55c674229923d02 (+ MTPv2 draft c929f8a5)
+# nemotron profile (previous deep, now selectable on its own): weights + MTPv2 speculative draft
+MODEL_NEMOTRON="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4|ff433f5493e25d631c9f12b5d55c674229923d02|Nemotron-3-Super-120B-A12B-NVFP4|75"
+MODEL_NEMOTRON_DRAFT="nvidia/Nemotron-3-Super-120B-A12B-BF16-MTPv2|c929f8a55d0527fea9f58b4cedc9e0c855cfc421|Nemotron-3-Super-MTPv2|6"
 
 # Workbench sandbox image (stack/workbench/Dockerfile; built on the box by `support-ctl workbench build`)
 WORKBENCH_BASE_IMAGE=python:3.12-slim-bookworm

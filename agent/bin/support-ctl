@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # support-ctl — operator CLI for the Spark support stack.
 #   support-ctl status                      stack health (LLM, targets, docs)
-#   support-ctl model fast|deep             switch the LLM profile (mutually exclusive)
+#   support-ctl model fast|deep|nemotron    switch the LLM profile (mutually exclusive)
 #   support-ctl target add NAME USER@HOST   register a Linux host (ssh) and install the agent key there
 #   support-ctl target list|test NAME
 #   support-ctl device add NAME TYPE KEY=VAL...   register a non-ssh device: serial PORT= BAUD= | can IFACE= BITRATE= |
@@ -67,7 +67,7 @@ model_dir_present() {  # model_dir_present fast|deep -> 0 if the profile's weigh
 }
 
 cmd_model() {
-  local want=${1:-}; [[ "$want" =~ ^(fast|deep)$ ]] || die "usage: support-ctl model fast|deep"
+  local want=${1:-}; [[ "$want" =~ ^(fast|deep|nemotron)$ ]] || die "usage: support-ctl model fast|deep|nemotron"
   model_dir_present "$want" || die "weights for profile '$want' are not on disk ($(sed -n 's|^MODEL_PATH=|/opt|p' "$STACK_DIR/env/$want.env")) — run install/fetch-models.sh $want first"
   sudo systemctl start "llm@$want"       # Conflicts= in the unit stops the other profile
   echo "starting llm@$want (model load takes several minutes) ..."

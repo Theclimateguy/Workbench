@@ -2,7 +2,7 @@
 Description=Support LLM profile %i (vLLM)
 After=docker.service network-online.target
 Requires=docker.service
-Conflicts=llm@fast.service llm@deep.service
+Conflicts=llm@fast.service llm@deep.service llm@nemotron.service
 
 [Service]
 Type=simple

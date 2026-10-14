@@ -70,8 +70,9 @@
 |---|---|---|---|---|
 | fast | Qwen3.6-35B-A3B NVFP4 + MTP | 95 | 20 + 25 (KV) ГиБ | 6 мин |
 | deep | gpt-oss-120b MXFP4 (Marlin) | 36 (31/поток при 2) | 66 + 27 (KV) ГиБ (util 0.80) | 9 мин |
+| nemotron | Nemotron 3 Super 120B-A12B NVFP4 + MTPv2 | ~20 | 75 + 24 (KV) ГиБ (util 0.85) | — |
 
-Профили взаимоисключающие (`Conflicts=`), переключение `support-ctl model`.
+Профили взаимоисключающие (`Conflicts=`), переключение `support-ctl model fast|deep|nemotron`.
 
 ## Web-интерфейс v2
 

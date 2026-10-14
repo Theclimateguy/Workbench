@@ -41,7 +41,7 @@ services:
   llm-deep:
     <<: *vllm
     container_name: llm-deep
-    profiles: [deep]
+    profiles: [deep, nemotron]    # nemotron = env/nemotron.env on the same service
     environment:            # gpt-oss-120b MXFP4 on GB10: Marlin MoE path (see env/deep.env)
       - HF_HUB_OFFLINE=1
       - VLLM_MXFP4_BACKEND=marlin

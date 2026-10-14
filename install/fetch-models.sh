@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# fetch-models.sh [fast|deep|all] — download model weights into /opt/models at the revisions
-# pinned in versions.lock. Resumable (re-run after a dropped connection). ~22 GiB fast, ~61 GiB deep.
+# fetch-models.sh [fast|deep|nemotron|all] — download model weights into /opt/models at the revisions
+# pinned in versions.lock. Resumable (re-run after a dropped connection). ~22 GiB fast, ~61 GiB deep, ~81 GiB nemotron.
 # Optional: HF_TOKEN env for higher rate limits; HF_ENDPOINT for a mirror.
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -43,6 +43,7 @@ fetch_tiktoken() {  # gpt-oss (Harmony) needs the tiktoken vocab files at runtim
 case "$want" in
   fast) fetch "$MODEL_FAST" ;;
   deep) fetch "$MODEL_DEEP"; fetch_tiktoken; [ -n "${MODEL_DEEP_DRAFT:-}" ] && fetch "$MODEL_DEEP_DRAFT" ;;
+  nemotron) fetch "$MODEL_NEMOTRON"; fetch "$MODEL_NEMOTRON_DRAFT" ;;
   all)  fetch "$MODEL_FAST"; fetch "$MODEL_DEEP"; fetch_tiktoken; [ -n "${MODEL_DEEP_DRAFT:-}" ] && fetch "$MODEL_DEEP_DRAFT" ;;
-  *) echo "usage: $0 fast|deep|all" >&2; exit 1 ;;
+  *) echo "usage: $0 fast|deep|nemotron|all" >&2; exit 1 ;;
 esac

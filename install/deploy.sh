@@ -43,7 +43,7 @@ done
 sudo systemctl daemon-reload
 
 log "sudo rules: the web UI may switch LLM profiles; the agent stack may run support-priv (sandbox network, CAN restart, arp-scan)"
-printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl start llm@fast, /usr/bin/systemctl start llm@deep, /usr/bin/systemctl stop llm@fast, /usr/bin/systemctl stop llm@deep, /usr/bin/systemctl restart llm@fast, /usr/bin/systemctl restart llm@deep\n%s ALL=(root) NOPASSWD: %s/bin/support-priv\n' "$RUN_USER" "$RUN_USER" "$SUPPORT_DIR" \
+printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl start llm@fast, /usr/bin/systemctl start llm@deep, /usr/bin/systemctl start llm@nemotron, /usr/bin/systemctl stop llm@fast, /usr/bin/systemctl stop llm@deep, /usr/bin/systemctl stop llm@nemotron, /usr/bin/systemctl restart llm@fast, /usr/bin/systemctl restart llm@deep, /usr/bin/systemctl restart llm@nemotron\n%s ALL=(root) NOPASSWD: %s/bin/support-priv\n' "$RUN_USER" "$RUN_USER" "$SUPPORT_DIR" \
   | sudo tee /etc/sudoers.d/90-support-ui >/dev/null && sudo chmod 440 /etc/sudoers.d/90-support-ui
 sudo visudo -cf /etc/sudoers.d/90-support-ui >/dev/null || { sudo rm -f /etc/sudoers.d/90-support-ui; log "  sudoers rule rejected, removed"; }
 

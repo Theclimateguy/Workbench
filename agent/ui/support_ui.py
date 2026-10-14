@@ -230,7 +230,7 @@ async def state():
     except Exception:
         pass
     profiles = {}
-    for prof in ("fast", "deep"):
+    for prof in ("fast", "deep", "nemotron"):
         profiles[prof] = subprocess.run(["systemctl", "is-active", f"llm@{prof}"], capture_output=True,
                                         text=True).stdout.strip()
     status = {}
@@ -401,8 +401,8 @@ async def question_reply(sid: str, qid: str, body: dict):
 async def switch_model(body: dict):
     """Start llm@fast or llm@deep (Conflicts= in the unit stops the other). Needs the sudoers rule from deploy.sh."""
     prof = (body or {}).get("profile")
-    if prof not in ("fast", "deep"):
-        raise HTTPException(400, "profile must be fast|deep")
+    if prof not in ("fast", "deep", "nemotron"):
+        raise HTTPException(400, "profile must be fast|deep|nemotron")
     env = Path(os.environ.get("SUPPORT_STACK_DIR", "/opt/support-stack")) / "env" / f"{prof}.env"
     mp = next((ln.split("=", 1)[1].strip() for ln in env.read_text().splitlines() if ln.startswith("MODEL_PATH=")), "") if env.exists() else ""
     local = Path("/opt" + mp) if mp.startswith("/models/") else None
