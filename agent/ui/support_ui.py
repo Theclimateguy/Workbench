@@ -43,7 +43,7 @@ ASSETS_DIR = Path(os.environ.get("SUPPORT_UI_ASSETS", "/opt/support/ui-assets"))
 TLS_DIR = Path(os.environ.get("SUPPORT_TLS_DIR", "/etc/support/tls"))
 INDEX_HTML = (Path(__file__).parent / "index.html").read_text()
 CLASSIC_HTML = (Path(__file__).parent / "classic.html").read_text()
-PUBLIC_PATHS = ("/ca.crt", "/sw.js", "/static/manifest.json", "/static/icons/")   # no login needed
+PUBLIC_PATHS = ("/ca.crt", "/sw.js", "/favicon.ico", "/static/manifest.json", "/static/icons/")   # no login needed
 MCP_DIR = Path(os.environ.get("SUPPORT_MCP_DIR", str(Path(__file__).parent.parent / "mcp")))
 SUPPORT_CTL = os.environ.get("SUPPORT_CTL", "/usr/local/bin/support-ctl")
 STACK_DIR = Path(os.environ.get("SUPPORT_STACK_DIR", "/opt/support-stack"))
@@ -184,6 +184,12 @@ async def classic():
 async def service_worker():
     """Served from the root so the worker's scope covers the whole app (a /static/ URL would only cover /static/)."""
     return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Browsers and bookmarks ask for /favicon.ico regardless of <link rel=icon>."""
+    return FileResponse(STATIC_DIR / "icons" / "favicon.ico", media_type="image/x-icon", headers={"Cache-Control": "max-age=86400"})
 
 
 @app.get("/ca.crt")
