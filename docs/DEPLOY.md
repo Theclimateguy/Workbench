@@ -62,6 +62,7 @@ cd ~/Workbench
 | 5 | vllm-image | `docker pull` по digest, проверка GPU в контейнере |
 | 5b | workbench-image | `support-ctl workbench build` — образ песочницы `workbench:local` (~355 МиБ) и сеть docker `workbench`; при отсутствии интернета — предупреждение, собрать позже |
 | 6 | ui-assets | Transformers.js + Whisper ONNX (~0.35 ГиБ) в `/opt/support/ui-assets` для голосового ввода в браузере |
+| 6a | library-model | модель эмбеддингов библиотеки (~0.25 ГиБ, `install/fetch-library-model.sh`) в `/opt/library/models`; без неё поиск только по ключевым словам |
 | 6 | models | `hf download` по ревизиям из lock в `/opt/models` |
 | 7 | services | ключ агента, `llm@fast` enable + старт, web-пароль, локальный CA + сертификат, `support-opencode`, `support-ui` (:8080), `support-ui-tls` (:8443) |
 | 8 | desktop | ярлык «Spark Support», мануал на рабочий стол, хотспот auto |
@@ -86,6 +87,7 @@ rsync -a /Volumes/SSD/models/ admin@10.77.0.1:/opt/models/            # пото
 - **Софт** (агент, UI, скрипты, конфиги): на Spark `support-ctl update` — `git pull` + `deploy.sh`. Веса, цели, ключи, документация, прогоны песочницы не трогаются.
 - **Песочница на уже развёрнутом устройстве** (обновление с версии до 2026-10-14): после `support-ctl update` один раз `support-ctl workbench build` (нужен интернет, ~2 мин); проверка — `/opt/support/venv/bin/python /opt/support/tests/connectors_smoke.py --ssh-target self`.
 - **Стенд приёмки** (не обязателен в поле): `tests/eval/stand.sh up` и `tests/eval/run.py` — см. [tests/eval/README.md](../tests/eval/README.md); контейнер `evalbox` можно снести `stand.sh down`.
+- **Библиотека**: `install/fetch-library-model.sh` (интернет один раз, ~0,25 ГиБ) включает смысловой поиск; без него — поиск по ключевым словам. Документы: вкладка «Библиотека» → «+ Загрузить» или `support-ctl library add FILE... --kind manual|datasheet|playbook|paper|note`.
 - **Голосовой ввод / PWA на уже развёрнутом Spark**: `support-ctl update`, затем `install/fetch-ui-assets.sh` (нужен интернет) и `support-ctl web` (выпустит сертификат и включит `support-ui-tls`).
 - **Третий профиль `nemotron`** (Nemotron 3 Super + MTPv2): `install/fetch-models.sh nemotron` (~81 ГиБ), затем `support-ctl model nemotron`; отдаётся под именем `deep`, конфиг агента не меняется.
 - **Свой профиль модели на одном устройстве** (например, Nemotron как `deep` там, где нет весов gpt-oss): положить env-файл в `/etc/support/deep.env` (образец — `stack/env/nemotron.env`); `deploy.sh`/`support-ctl update` будут подставлять его вместо репозиторного `env/deep.env`. Убрать override — удалить файл и повторить `deploy.sh`.

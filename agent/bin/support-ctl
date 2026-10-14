@@ -16,6 +16,8 @@
 #   support-ctl gui                         open the web UI in the default browser (desktop shortcut)
 #   support-ctl install-desktop             install the Spark Support icon + launcher for the current user
 #   support-ctl web [password]              start/enable the web UI on :8080 + :8443 (user "support"; sets the password; issues the local TLS cert)
+#   support-ctl library add FILE... [--kind manual|datasheet|playbook|paper|note] | search QUERY | list | rm ID | stats | embed
+#                                           offline library (/opt/library) searched by the agent (library_search) and the UI
 #   support-ctl bench                       run tests/bench.py against the active profile
 #   support-ctl update                      git pull the Workbench repo and redeploy software (models untouched)
 #   support-ctl version                     installed versions (OS, driver, opencode, vLLM image, models)
@@ -366,6 +368,7 @@ cmd_install_desktop() {
   echo "desktop launcher installed: ~/Desktop/spark-support.desktop (+ app menu entry 'Spark Support')"
 }
 
+cmd_library() { LIBRARY_DIR=${LIBRARY_DIR:-/opt/library} HF_HUB_OFFLINE=1 "$SUPPORT_DIR/venv/bin/python" "$SUPPORT_DIR/mcp/library_core.py" "$@"; }
 cmd_bench() { "$SUPPORT_DIR/venv/bin/python" "$SUPPORT_DIR/tests/bench.py" "$@"; }
 
 cmd_update() {
@@ -400,6 +403,7 @@ case "${1:-}" in
   net)    shift; cmd_net "$@" ;;
   agent)  shift; cmd_agent "$@" ;;
   bench)  shift; cmd_bench "$@" ;;
+  library) shift; cmd_library "$@" ;;
   web)    shift; cmd_web "$@" ;;
   gui)    cmd_gui ;;
   install-desktop) cmd_install_desktop ;;

@@ -17,11 +17,14 @@ Env:  OPENCODE_URL (default http://127.0.0.1:4096), OPENCODE_SERVER_PASSWORD / _
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
+import re
 import secrets
 import subprocess
+import time
 from pathlib import Path
 
 import httpx
@@ -47,6 +50,19 @@ PUBLIC_PATHS = ("/ca.crt", "/sw.js", "/favicon.ico", "/static/manifest.json", "/
 MCP_DIR = Path(os.environ.get("SUPPORT_MCP_DIR", str(Path(__file__).parent.parent / "mcp")))
 SUPPORT_CTL = os.environ.get("SUPPORT_CTL", "/usr/local/bin/support-ctl")
 STACK_DIR = Path(os.environ.get("SUPPORT_STACK_DIR", "/opt/support-stack"))
+LIBRARY_DIR = Path(os.environ.get("LIBRARY_DIR", "/opt/library"))
+MEDIA_DIR = Path(os.environ.get("SUPPORT_MEDIA_DIR", "/var/lib/support/media"))
+VISION_MODELS = {"fast"}            # profiles whose model sees images (opencode.json: modalities)
+
+
+def _library():
+    """library_core (agent/mcp), imported in-process: the Library tab searches the same index as the agent."""
+    import importlib
+    import sys
+    if str(MCP_DIR) not in sys.path:
+        sys.path.insert(0, str(MCP_DIR))
+    os.environ.setdefault("LIBRARY_DIR", str(LIBRARY_DIR))
+    return importlib.import_module("library_core")
 
 
 def _target_host():
@@ -159,6 +175,12 @@ def _normalize_part(p: dict) -> dict | None:
         return {"type": "text", "text": p.get("text", "")}
     if t == "reasoning":
         return {"type": "reasoning", "text": p.get("text", "")}
+    if t == "file":
+        fn, mime = p.get("filename") or "", p.get("mime") or ""
+        m = re.fullmatch(r"media/([\w-]{4,80})/([\w.-]{1,120})", fn)
+        if mime.startswith("image/") and m:
+            return {"type": "image", "src": f"/api/media/{m.group(1)}/{m.group(2)}", "name": m.group(2)}
+        return {"type": "file", "name": fn or "file", "mime": mime}
     if t == "tool":
         st = p.get("state", {}) or {}
         return {"type": "tool", "tool": p.get("tool"), "callID": p.get("callID"), "status": st.get("status"), "input": st.get("input", {}),
@@ -355,14 +377,20 @@ async def active_model() -> str | None:
 @app.post("/api/session/{sid}/prompt")
 async def prompt(sid: str, body: dict):
     text = (body or {}).get("text", "").strip()
-    if not text:
+    images = [str(x) for x in (body or {}).get("images", [])][:8]
+    if not text and not images:
         raise HTTPException(400, "empty prompt")
-    payload: dict = {"parts": [{"type": "text", "text": text}]}
     mid = await active_model()
-    if mid:
-        payload["model"] = {"providerID": "spark", "modelID": mid}
-    else:
+    if not mid:
         raise HTTPException(503, "LLM is not serving any model (support-ctl status)")
+    if images and mid not in VISION_MODELS:
+        raise HTTPException(409, f"модель «{mid}» не видит изображения — переключитесь на fast или отправьте без фото")
+    payload: dict = {"parts": [{"type": "text", "text": text or "Посмотри на фото."}], "model": {"providerID": "spark", "modelID": mid}}
+    for name in images:
+        f = _media_path(sid, name)
+        mime = "image/png" if f.suffix == ".png" else "image/webp" if f.suffix == ".webp" else "image/jpeg"
+        payload["parts"].append({"type": "file", "mime": mime, "filename": f"media/{sid}/{name}",
+                                 "url": f"data:{mime};base64," + base64.b64encode(f.read_bytes()).decode()})
     await oc("POST", f"/session/{sid}/prompt_async", json=payload)
     return {"ok": True}
 
@@ -559,6 +587,8 @@ async def session_export(sid: str):
             t = p.get("type")
             if t == "text":
                 lines += [p.get("text", ""), ""]
+            elif t == "file":
+                lines += [f"*вложение: {p.get('filename') or p.get('mime')}*", ""]
             elif t == "reasoning" and p.get("text"):
                 lines += ["<details><summary>ход мыслей</summary>", "", p["text"], "", "</details>", ""]
             elif t == "tool":
@@ -590,6 +620,120 @@ async def audit(n: int = 40):
         except json.JSONDecodeError:
             pass
     return list(reversed(out))
+
+
+# ---------- library (roadmap phase C): same index as the agent's `library` MCP server ----------
+
+@app.get("/api/library")
+async def library_overview(kind: str = ""):
+    lib = _library()
+    return {"stats": await asyncio.to_thread(lib.stats), "docs": await asyncio.to_thread(lib.list_docs, kind)}
+
+
+@app.get("/api/library/search")
+async def library_search(q: str, kind: str = "", k: int = 12):
+    lib = _library()
+    hits = await asyncio.to_thread(lib.search, q, max(1, min(k, 30)), kind if kind in lib.KINDS else "")
+    return [{**h, "text": h["text"][:1500]} for h in hits]
+
+
+@app.get("/api/library/doc/{doc_id}")
+async def library_doc(doc_id: int, page: int = 0, chunk: int = -1, around: int = 1):
+    try:
+        return await asyncio.to_thread(_library().read, doc_id, page, chunk, around, 40000)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/library/file/{doc_id}")
+async def library_file(doc_id: int):
+    lib = _library()
+    doc = next((d for d in lib.list_docs() if d["id"] == doc_id), None)
+    p = (LIBRARY_DIR / doc["path"]) if doc else None
+    if not p or not p.exists():
+        raise HTTPException(404, "file not found")
+    return FileResponse(p, filename=p.name, content_disposition_type="inline")
+
+
+@app.post("/api/library/upload")
+async def library_upload(request: Request, name: str, kind: str = "manual"):
+    """Raw request body = the file. Copied to LIBRARY_DIR/docs/<kind>/ and indexed (embeddings when installed)."""
+    lib = _library()
+    if kind not in lib.KINDS:
+        raise HTTPException(400, f"kind: {', '.join(lib.KINDS)}")
+    name = Path(name).name
+    if Path(name).suffix.lower() not in lib.EXTS:
+        raise HTTPException(415, f"формат не поддерживается: {', '.join(sorted(lib.EXTS))}")
+    data = await request.body()
+    if not data or len(data) > 300 * 2**20:
+        raise HTTPException(413, "пустой файл или больше 300 МБ")
+    tmp = LIBRARY_DIR / "incoming"
+    tmp.mkdir(parents=True, exist_ok=True)
+    src = tmp / re.sub(r"[^\w.\-() ]+", "_", name)
+    src.write_bytes(data)
+    try:
+        res = await asyncio.to_thread(lib.add, src, kind)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(422, f"не удалось проиндексировать: {e}")
+    finally:
+        src.unlink(missing_ok=True)
+    return res
+
+
+@app.delete("/api/library/{doc_id}")
+async def library_delete(doc_id: int):
+    if not await asyncio.to_thread(_library().remove, doc_id):
+        raise HTTPException(404, "no such document")
+    return {"ok": True}
+
+
+# ---------- media (roadmap phase D): photos per session, sent to the vision model as file parts ----------
+
+IMG_MAGIC = {b"\xff\xd8\xff": ".jpg", b"\x89PNG": ".png", b"RIFF": ".webp"}
+
+
+def _media_path(sid: str, name: str = "") -> Path:
+    if not re.fullmatch(r"[\w-]{4,80}", sid) or (name and not re.fullmatch(r"[\w-]{1,100}\.(jpg|png|webp)", name)):
+        raise HTTPException(400, "bad media id")
+    p = MEDIA_DIR / sid / name if name else MEDIA_DIR / sid
+    if name and not p.exists():
+        raise HTTPException(404, "no such photo")
+    return p
+
+
+@app.get("/api/media/{sid}")
+async def media_list(sid: str):
+    d = _media_path(sid)
+    files = sorted(d.glob("*.*"), key=lambda f: f.stat().st_mtime) if d.exists() else []
+    return [{"name": f.name, "size": f.stat().st_size, "time": f.stat().st_mtime, "src": f"/api/media/{sid}/{f.name}"}
+            for f in files if f.suffix in (".jpg", ".png", ".webp")]
+
+
+@app.post("/api/media/{sid}")
+async def media_upload(sid: str, request: Request):
+    """Raw body = an image (the browser already scaled it down to ≤1600 px JPEG)."""
+    data = await request.body()
+    if len(data) > 20 * 2**20:
+        raise HTTPException(413, "фото больше 20 МБ")
+    ext = next((e for m, e in IMG_MAGIC.items() if data.startswith(m)), None)
+    if not ext:
+        raise HTTPException(415, "нужен JPEG, PNG или WebP")
+    d = _media_path(sid)
+    d.mkdir(parents=True, exist_ok=True)
+    name = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3) + ext
+    (d / name).write_bytes(data)
+    return {"name": name, "src": f"/api/media/{sid}/{name}", "size": len(data)}
+
+
+@app.get("/api/media/{sid}/{name}")
+async def media_file(sid: str, name: str):
+    return FileResponse(_media_path(sid, name), headers={"Cache-Control": "max-age=86400"})
+
+
+@app.delete("/api/media/{sid}/{name}")
+async def media_delete(sid: str, name: str):
+    _media_path(sid, name).unlink()
+    return {"ok": True}
 
 
 @app.get("/api/health")

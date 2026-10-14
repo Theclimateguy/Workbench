@@ -8,3 +8,6 @@ huggingface_hub>=0.34   # the `hf` CLI is built in; the [cli] extra no longer ex
 pyserial>=3.5,<4
 pymodbus>=3.16,<4
 python-can>=4.6,<5
+# offline library (agent/mcp/library_core.py): PDF text; embeddings for semantic search (CPU, ONNX)
+pypdf>=5,<7
+fastembed>=0.7,<1

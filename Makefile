@@ -5,7 +5,7 @@ HOST ?= gx10
 lint:
 	bash -n install/*.sh agent/bin/support-ctl agent/bin/support-resolve-target agent/bin/onboard-target.sh
 	shellcheck -S warning install/*.sh agent/bin/support-ctl agent/bin/support-resolve-target agent/bin/onboard-target.sh
-	python3 -m py_compile agent/mcp/target_host.py agent/ui/support_ui.py tests/bench.py tests/mcp_smoke.py
+	python3 -m py_compile agent/mcp/target_host.py agent/mcp/library.py agent/mcp/library_core.py agent/ui/support_ui.py tests/bench.py tests/mcp_smoke.py
 	@echo lint ok
 
 manual:

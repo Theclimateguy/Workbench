@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Spark Support</title>
 <link rel="manifest" href="/static/manifest.json">
-<link rel="icon" href="/favicon.ico" sizes="any">
-<link rel="icon" href="/static/icons/icon-32.png" type="image/png" sizes="32x32">
-<link rel="icon" href="/static/icons/icon-48.png" type="image/png" sizes="48x48">
-<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<link rel="icon" href="/favicon.ico?v=3" sizes="any">
+<link rel="icon" href="/static/icons/icon-32.png?v=3" type="image/png" sizes="32x32">
+<link rel="icon" href="/static/icons/icon-48.png?v=3" type="image/png" sizes="48x48">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=3">
 <meta name="theme-color" content="#04070b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -170,7 +170,12 @@ const $ = s => document.querySelector(s);
 let sid = location.hash.slice(1) || null, lastHTML = "", targetName = "", busySince = null;
 const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 marked.use({ gfm: true, breaks: true });
-const fmt = s => { try { return marked.parse(esc(s)); } catch { return esc(s).replace(/\n/g, "<br>"); } };
+// Markdown from the model: raw HTML is shown as text, links only http(s)/mailto, images become links
+marked.use({ renderer: {
+  html(t) { return esc(t.text ?? t); },
+  link(t) { const h = /^(https?:|mailto:)/i.test(t.href) ? t.href : "#"; return `<a href="${esc(h).replace(/"/g, "&quot;")}" target="_blank" rel="noopener noreferrer">${this.parser.parseInline(t.tokens)}</a>`; },
+  image(t) { const h = /^https?:/i.test(t.href) ? t.href : "#"; return `<a href="${esc(h).replace(/"/g, "&quot;")}" target="_blank" rel="noopener noreferrer">${esc(t.text || t.href)}</a>`; } } });
+const fmt = s => { try { return marked.parse(s); } catch { return esc(s).replace(/\n/g, "<br>"); } };
 const api = async (path, opt={}) => {
   const r = await fetch(location.origin + path, {headers:{"Content-Type":"application/json"}, ...opt});
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);

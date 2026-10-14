@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Workbench</title>
 <link rel="manifest" href="/static/manifest.json">
-<link rel="icon" href="/favicon.ico" sizes="any">
-<link rel="icon" href="/static/icons/icon-32.png" type="image/png" sizes="32x32">
-<link rel="icon" href="/static/icons/icon-48.png" type="image/png" sizes="48x48">
-<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<link rel="icon" href="/favicon.ico?v=3" sizes="any">
+<link rel="icon" href="/static/icons/icon-32.png?v=3" type="image/png" sizes="32x32">
+<link rel="icon" href="/static/icons/icon-48.png?v=3" type="image/png" sizes="48x48">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=3">
 <meta name="theme-color" content="#04070b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -149,6 +149,24 @@
   #auditView th, #auditView td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--bd); vertical-align:top } #auditView th { background:var(--surf2); color:var(--tx2); font-weight:600 }
   #auditView td.c { font-family:"JetBrains Mono", Menlo, monospace; white-space:pre-wrap; word-break:break-all } .rej { color:var(--dng) }
   .view { flex:1; min-height:0; overflow:auto; padding:16px 20px }
+  /* library */
+  .libhit { border:1px solid var(--bd); border-radius:10px; background:var(--surf); padding:8px 10px; margin-bottom:8px; font-size:12.5px }
+  .libhit .h { display:flex; gap:6px; align-items:center; font-weight:600; margin-bottom:4px } .libhit .h .grow { flex:1 } .libhit .h .src { font-family:"JetBrains Mono", Menlo, monospace; font-size:11px; color:var(--acc) }
+  .libhit .sn { color:var(--tx2); white-space:pre-wrap; max-height:9.5em; overflow:hidden } .libhit .acts { display:flex; gap:4px; margin-top:6px }
+  .libhit mark, .libread mark { background:var(--accS); color:var(--tx); padding:0 2px; border-radius:2px }
+  .libread { white-space:pre-wrap; font-size:12.5px; line-height:1.5 }
+  .libdoc { display:flex; align-items:center; gap:8px; padding:6px 8px; border-bottom:1px solid var(--bd); font-size:12.5px } .libdoc .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .tabbar input.q, .tabbar select { font:inherit; font-size:12px; padding:5px 8px; border:1px solid var(--bd2); border-radius:8px; background:var(--surf2); color:var(--tx) }
+  /* media + attachments */
+  .mgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:8px }
+  .mthumb { position:relative; border:1px solid var(--bd); border-radius:8px; overflow:hidden; aspect-ratio:4/3; background:var(--surf2); cursor:pointer }
+  .mthumb img { width:100%; height:100%; object-fit:cover; display:block } .mthumb.sel { border-color:var(--acc); box-shadow:0 0 0 2px var(--acc) }
+  .mthumb .ov { position:absolute; left:4px; right:4px; bottom:4px; display:flex; gap:4px; justify-content:space-between }
+  .mthumb .ov button { min-height:24px; padding:0 7px; font-size:11px }
+  .thumbs { display:flex; flex-wrap:wrap; gap:6px } .thumbs img { width:120px; height:90px; object-fit:cover; border-radius:6px; border:1px solid var(--bd); display:block }
+  #attachRow { display:flex; flex-wrap:wrap; gap:6px } #attachRow:empty { display:none }
+  #attachRow .att { position:relative } #attachRow img { width:56px; height:42px; object-fit:cover; border-radius:6px; border:1px solid var(--bd2); display:block }
+  #attachRow .att button { position:absolute; top:-6px; right:-6px; min-height:18px; width:18px; padding:0; justify-content:center; border-radius:50%; font-size:10px }
   /* responsive */
   .dockToggle { display:none }
   @media (max-width: 1279px) { .dock { width:380px } .panel.hidden { display:none } }
@@ -174,7 +192,7 @@
     </label>
     <button type="button" class="ghost sm" id="auditBtn" title="Журнал действий агента">аудит · <span id="auditN">0</span></button>
     <div class="pill" id="profile" title="Профиль модели: fast — быстрый, deep — рассуждает дольше. Переключение 6–12 минут." style="padding:0; overflow:hidden; gap:0">
-      <button type="button" class="ghost sm" data-prof="fast" style="border-radius:0; min-height:24px">fast</button><button type="button" class="ghost sm" data-prof="deep" style="border-radius:0; min-height:24px">deep</button>
+      <button type="button" class="ghost sm" data-prof="fast" style="border-radius:0; min-height:24px">fast</button><button type="button" class="ghost sm" data-prof="deep" style="border-radius:0; min-height:24px">deep</button><button type="button" class="ghost sm" data-prof="nemotron" style="border-radius:0; min-height:24px" title="Nemotron 3 Super 120B">nemo</button>
     </div>
     <button type="button" class="ghost sm" id="theme" title="Светлая / тёмная тема" aria-label="Тема"><svg class="i" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
     <button type="button" class="ghost sm dockToggle" id="dockToggle" title="Панель вкладок">▣</button>
@@ -204,8 +222,11 @@
       <div class="composer" id="composer">
         <div id="hint" style="display:none"></div><div id="sttStatus" style="display:none"></div>
         <form id="form">
+          <div id="attachRow"></div>
           <textarea id="input" rows="1" placeholder="Опиши проблему или задачу… Enter — отправить, Shift+Enter — новая строка"></textarea>
           <div class="row">
+            <button type="button" class="ghost sm" id="camBtn" title="Фото: камера телефона / файл (видит только модель fast)" aria-label="Фото"><svg class="i" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></button>
+            <input type="file" id="camInput" accept="image/*" capture="environment" multiple hidden>
             <button type="button" class="ghost sm" id="mic" style="display:none" aria-label="Голосовой ввод" title="Голосовой ввод: нажми — говори — нажми ещё раз (или пробел вне поля ввода)"><svg class="i" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></button>
             <span class="pill mono" id="modelPill">—</span>
             <span class="pill" id="targetPill" title="Устройство, к которому относится задача (агент выбирает по имени в тексте)">—</span>
@@ -225,7 +246,12 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 marked.use({ gfm: true, breaks: true });
-const fmt = s => { try { return marked.parse(esc(s)); } catch { return esc(s).replace(/\n/g, "<br>"); } };
+// Markdown from the model: raw HTML is shown as text, links only http(s)/mailto, images become links
+marked.use({ renderer: {
+  html(t) { return esc(t.text ?? t); },
+  link(t) { const h = /^(https?:|mailto:)/i.test(t.href) ? t.href : "#"; return `<a href="${esc(h).replace(/"/g, "&quot;")}" target="_blank" rel="noopener noreferrer">${this.parser.parseInline(t.tokens)}</a>`; },
+  image(t) { const h = /^https?:/i.test(t.href) ? t.href : "#"; return `<a href="${esc(h).replace(/"/g, "&quot;")}" target="_blank" rel="noopener noreferrer">${esc(t.text || t.href)}</a>`; } } });
+const fmt = s => { try { return marked.parse(s); } catch { return esc(s).replace(/\n/g, "<br>"); } };
 const api = async (path, opt={}) => {
   const r = await fetch(location.origin + path, {headers:{"Content-Type":"application/json"}, ...opt});
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
@@ -356,7 +382,7 @@ const TAB_FOR = { collect_facts: "device", observe: "device", scan: "device", ru
 function renderTool(p, idx) {
   const icon = p.status === "completed" ? ICON.ok : p.status === "error" ? ICON.err : ICON.run;
   const dur = p.time?.start && p.time?.end ? `${((p.time.end - p.time.start)/1000).toFixed(1)} с` : "";
-  const name = (p.tool || "").replace(/^target-host_/, ""), cls = toolClass(name);
+  const name = (p.tool || "").replace(/^(target-host|library)_/, ""), cls = toolClass(name);
   const brief = p.input?.cmd || p.input?.path || p.input?.action || p.input?.query || (p.input?.script ? (p.input.language || "python") + ": " + p.input.script.split("\n")[0] : "") || p.input?.what || "";
   const dev = p.input?.device || p.input?.target;
   const rc = (p.output || "").match(/^rc=(\d+)/); const rcPill = rc ? `<span class="pill ${rc[1]==="0"?"ok":"dng"} mono">rc=${rc[1]}</span>` : (p.output || "").startsWith("REJECTED") ? `<span class="pill dng">отклонено защитой</span>` : "";
@@ -371,7 +397,8 @@ function renderMessages(d) {
     const time = m.time ? new Date(m.time).toLocaleTimeString("ru", {hour:"2-digit", minute:"2-digit"}) : "";
     if (m.role === "user") {
       const text = m.parts.filter(p => p.type === "text").map(p => p.text).join("\n");
-      return `<div class="msg user"><div class="who"><span class="av">${ICON.user}</span><b>Оператор</b> ${time}</div><div class="content"><div class="utext">${esc(text)}</div></div></div>`;
+      const imgs = m.parts.filter(p => p.type === "image").map(p => `<a href="${esc(p.src)}" target="_blank" rel="noopener"><img src="${esc(p.src)}" alt="${esc(p.name)}" loading="lazy"></a>`).join("");
+      return `<div class="msg user"><div class="who"><span class="av">${ICON.user}</span><b>Оператор</b> ${time}</div><div class="content">${imgs ? `<div class="thumbs">${imgs}</div>` : ""}<div class="utext">${esc(text)}</div></div></div>`;
     }
     const parts = m.parts.map(p => {
       if (p.type === "text") { if (/```mermaid/.test(p.text)) hasMermaid = true; return `<div class="agent">${fmt(p.text)}</div>`; }
@@ -419,7 +446,7 @@ async function poll() {
   catch (e) { $("#log").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 function selectSession(id) {
-  sid = id; lastHTML = ""; lastData = null; stickBottom = true; busySince = null; $("#log").innerHTML = "";
+  sid = id; lastHTML = ""; lastData = null; stickBottom = true; busySince = null; $("#log").innerHTML = ""; staged.clear(); renderStaged(); if (activeTab === "media") tabs.media.load();
   document.querySelectorAll("#sessions a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#"+id));
   showView("chat"); poll(); if (stateCache) renderSessions(stateCache);
 }
@@ -565,8 +592,83 @@ tabs.diagram = { title: "Схема", src: "", ready: false,
     catch (e) { out.innerHTML = `<div class="err">Ошибка схемы: ${esc(e.message || e)}</div>`; }
     document.querySelectorAll('body > [id^="dia"], body > [id^="ddia"]').forEach(n => n.remove()); },
   download(kind) { const blob = kind === "svg" ? new Blob([$("#diaOut").innerHTML], {type: "image/svg+xml"}) : new Blob([this.src], {type: "text/plain"}); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `diagram-${new Date().toISOString().slice(0,16).replace(/[:T]/g, "-")}.${kind}`; a.click(); } };
-tabs.library = { title: "Библиотека", disabled: true, hint: "Фаза C дорожной карты: поиск по мануалам и плейбукам. Пока документация загружается в /opt/support/workspace/docs/.", mount(h) { h.innerHTML = ""; } };
-tabs.media = { title: "Медиа", disabled: true, hint: "Фаза D: фото с телефона через хотспот и камера ноутбука.", mount(h) { h.innerHTML = ""; } };
+// Библиотека: offline manuals / datasheets / playbooks / papers; same index as the agent's library_search
+const KIND_RU = { "": "все", manual: "мануалы", datasheet: "даташиты", playbook: "плейбуки", paper: "статьи", note: "заметки" };
+const toComposer = s => { const t = $("#input"); t.value = (t.value ? t.value + "\n" : "") + s; t.focus(); t.dispatchEvent(new Event("input")); };
+const hl = (text, q) => { let h = esc(text); const words = (q || "").toLowerCase().match(/[\p{L}\p{N}_-]{3,}/gu) || [];
+  for (const w of words) h = h.replace(new RegExp(`(${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "giu"), "<mark>$1</mark>"); return h; };
+tabs.library = { title: "Библиотека", sub: "search", q: "", kind: "", hits: null, reader: null, info: null,
+  mount(h) { h.innerHTML = `<div class="tabbar"><input class="q mono" id="libQ" placeholder="код ошибки, модель, процедура…" style="flex:1;min-width:140px"><select id="libKind">${Object.entries(KIND_RU).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select><button type="button" class="primary sm" id="libGo">Найти</button></div>
+      <div class="tabbar"><div class="pill" style="padding:0;overflow:hidden;gap:0"><button type="button" class="ghost sm" data-lsub="search" style="min-height:24px;border-radius:0">Поиск</button><button type="button" class="ghost sm" data-lsub="docs" style="min-height:24px;border-radius:0">Документы</button></div><span class="grow"></span><span class="pill" id="libStat">…</span><button type="button" class="sm" id="libUp" title="PDF, MD, TXT, HTML, DOCX — в библиотеку выбранного вида">+ Загрузить</button><input type="file" id="libFile" multiple hidden></div>
+      <div class="tabbody" id="libBody"></div>`;
+    $("#libQ").value = this.q; $("#libKind").value = this.kind;
+    $("#libGo").onclick = () => this.search(); $("#libQ").onkeydown = e => { if (e.key === "Enter") this.search(); };
+    $("#libKind").onchange = () => { this.kind = $("#libKind").value; this.sub === "docs" ? this.loadInfo() : this.q && this.search(); };
+    h.querySelectorAll("[data-lsub]").forEach(b => b.onclick = () => { this.sub = b.dataset.lsub; this.reader = null; this.sub === "docs" ? this.loadInfo() : this.draw(); });
+    $("#libUp").onclick = () => $("#libFile").click(); $("#libFile").onchange = e => { this.upload([...e.target.files]); e.target.value = ""; };
+    this.loadInfo(); },
+  async loadInfo() { try { this.info = await api(`/api/library?kind=${encodeURIComponent(this.kind)}`); } catch (e) { this.info = { error: e.message }; } this.draw(); },
+  async search() { this.q = $("#libQ").value.trim(); this.kind = $("#libKind").value; this.sub = "search"; this.reader = null; if (!this.q) return this.draw();
+    $("#libBody").innerHTML = `<div class="empty">Ищу…</div>`;
+    try { this.hits = await api(`/api/library/search?q=${encodeURIComponent(this.q)}&kind=${encodeURIComponent(this.kind)}`); } catch (e) { this.hits = { error: e.message }; } this.draw(); },
+  async open(id, page, chunk) { const r = await api(`/api/library/doc/${id}?page=${page || 0}&chunk=${page ? -1 : chunk}&around=${page ? 2 : 2}`); this.reader = { ...r, page, chunk }; this.draw(); },
+  async upload(files) { const kind = this.kind || "manual"; const b = $("#libBody");
+    for (const f of files) { b.innerHTML = `<div class="empty">Индексирую ${esc(f.name)} (${(f.size / 1e6).toFixed(1)} МБ) как «${KIND_RU[kind]}»…</div>`;
+      const r = await fetch(`/api/library/upload?name=${encodeURIComponent(f.name)}&kind=${kind}`, { method: "POST", body: f });
+      if (!r.ok) alert(`${f.name}: ${(await r.json().catch(() => ({}))).detail || r.status}`); }
+    this.sub = "docs"; this.loadInfo(); },
+  cite(h) { return `[doc:${h.doc_id}${h.page ? " p." + h.page : ""}] ${h.title}${h.heading ? " — " + h.heading : ""}`; },
+  draw() { const b = $("#libBody"); if (!b) return; const st = this.info?.stats;
+    $("#libStat").textContent = st ? `${st.docs} док · ${st.chunks} фрагм · ${st.embeddings ? "смысловой поиск" : "только ключевые слова"}` : "…";
+    $("#libStat").className = "pill " + (st ? (st.embeddings ? "ok" : "warn") : "");
+    document.querySelectorAll("[data-lsub]").forEach(x => { const on = x.dataset.lsub === this.sub; x.style.background = on ? "var(--accS)" : ""; x.style.color = on ? "var(--acc)" : ""; });
+    if (this.reader) { const r = this.reader, d = r.doc;
+      b.innerHTML = `<div class="tabbar" style="padding:0 0 8px;border:0"><button type="button" class="ghost sm" id="libBack">← назад</button><b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.title)}</b>${/\.pdf$/i.test(d.path) ? `<a href="/api/library/file/${d.id}${r.page ? "#page=" + r.page : ""}" target="_blank" rel="noopener"><button type="button" class="ghost sm">PDF ↗</button></a>` : ""}${r.page ? `<button type="button" class="ghost sm" id="libPrev">‹ стр.</button><button type="button" class="ghost sm" id="libNext">стр. ›</button>` : ""}</div><div class="libread">${hl(r.text, this.q)}</div>`;
+      $("#libBack").onclick = () => { this.reader = null; this.draw(); };
+      if (r.page) { $("#libPrev").onclick = () => this.open(d.id, Math.max(1, r.page - 2)); $("#libNext").onclick = () => this.open(d.id, r.page + 2); }
+      return; }
+    if (this.sub === "docs") { const docs = this.info?.docs;
+      if (this.info?.error) { b.innerHTML = `<div class="err">${esc(this.info.error)}</div>`; return; }
+      b.innerHTML = (docs || []).map(d => `<div class="libdoc"><span class="pill">${esc(KIND_RU[d.kind] || d.kind)}</span><span class="t" title="${esc(d.path)}">${esc(d.title)}</span><span class="mono" style="color:var(--tx3)">${d.pages ? d.pages + " стр · " : ""}${d.chunks} фр</span><button type="button" class="ghost sm" data-open="${d.id}">читать</button><button type="button" class="ghost sm" data-del="${d.id}" title="Удалить из библиотеки">✕</button></div>`).join("")
+        || `<div class="empty">Библиотека пуста. «+ Загрузить» — мануалы, даташиты, плейбуки (PDF, MD, TXT, HTML, DOCX). Вид документа берётся из фильтра сверху.</div>`;
+      b.querySelectorAll("[data-open]").forEach(x => x.onclick = () => this.open(+x.dataset.open, 0, 0));
+      b.querySelectorAll("[data-del]").forEach(x => x.onclick = async () => { if (!confirm("Удалить документ из библиотеки (и файл)?")) return; await api(`/api/library/${x.dataset.del}`, {method: "DELETE"}); this.loadInfo(); });
+      return; }
+    const hits = this.hits;
+    if (!hits) { b.innerHTML = `<div class="empty">Поиск по офлайн-библиотеке: мануалы, даташиты, плейбуки, статьи. Агент ищет там же (library_search) и ссылается как [doc:ID p.N].</div>`; return; }
+    if (hits.error) { b.innerHTML = `<div class="err">${esc(hits.error)}</div>`; return; }
+    b.innerHTML = hits.map((h, i) => `<div class="libhit"><div class="h"><span class="src">[doc:${h.doc_id}${h.page ? " p." + h.page : ""}]</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.title)}${h.heading ? ` <span style="color:var(--tx3);font-weight:400">— ${esc(h.heading)}</span>` : ""}</span><span class="grow"></span><span class="pill">${esc(KIND_RU[h.kind] || h.kind)}</span></div><div class="sn">${hl(h.text, this.q)}</div><div class="acts"><button type="button" class="ghost sm" data-read="${i}">читать</button><button type="button" class="ghost sm" data-chat="${i}" title="Вставить фрагмент в поле ввода">в чат</button>${/\.pdf$/i.test(h.path) ? `<a href="/api/library/file/${h.doc_id}${h.page ? "#page=" + h.page : ""}" target="_blank" rel="noopener"><button type="button" class="ghost sm">PDF ↗</button></a>` : ""}</div></div>`).join("")
+      || `<div class="empty">Ничего не найдено. Мануалы обычно на английском — попробуйте английские ключевые слова.</div>`;
+    b.querySelectorAll("[data-read]").forEach(x => x.onclick = () => { const h = hits[+x.dataset.read]; this.open(h.doc_id, h.page, h.ord); });
+    b.querySelectorAll("[data-chat]").forEach(x => x.onclick = () => { const h = hits[+x.dataset.chat]; toComposer(`Из библиотеки ${this.cite(h)}:\n> ${h.text.slice(0, 900).replace(/\n+/g, "\n> ")}\n`); }); } };
+// Медиа: photos of this session (phone over the hotspot, laptop camera); selected ones go with the next message
+const staged = new Set();
+async function shrinkImage(file, max = 1600) {
+  try { const bmp = await createImageBitmap(file); const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas"); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k); c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    return await new Promise(res => c.toBlob(res, "image/jpeg", 0.85)); } catch { return file; } }
+async function uploadPhotos(files, stage) {
+  if (!sid) { alert("Сначала откройте или создайте сессию"); return; }
+  for (const f of files) { const blob = await shrinkImage(f); const r = await fetch(`/api/media/${sid}`, { method: "POST", body: blob });
+    if (!r.ok) { alert(`${f.name}: ${(await r.json().catch(() => ({}))).detail || r.status}`); continue; }
+    const m = await r.json(); if (stage) staged.add(m.name); }
+  renderStaged(); if (activeTab === "media") tabs.media.load(); }
+function renderStaged() {
+  $("#attachRow").innerHTML = [...staged].map(n => `<span class="att"><img src="/api/media/${sid}/${esc(n)}" alt=""><button type="button" data-unstage="${esc(n)}" title="Не отправлять">✕</button></span>`).join("");
+  $("#attachRow").querySelectorAll("[data-unstage]").forEach(b => b.onclick = () => { staged.delete(b.dataset.unstage); renderStaged(); if (activeTab === "media") tabs.media.draw(); }); }
+$("#camBtn").onclick = () => $("#camInput").click();
+$("#camInput").onchange = e => { uploadPhotos([...e.target.files], true); e.target.value = ""; };
+tabs.media = { title: "Медиа", items: [],
+  mount(h) { h.innerHTML = `<div class="tabbar"><span style="font-weight:600">Фото сессии</span><span class="pill" id="mVision"></span><span class="grow"></span><button type="button" class="primary sm" id="mShot">Снять / загрузить</button><input type="file" id="mInput" accept="image/*" capture="environment" multiple hidden></div><div class="tabbody"><div class="legend">С телефона: подключитесь к хотспоту Workbench, откройте этот интерфейс — кнопка откроет камеру. Отмеченные фото уйдут агенту со следующим сообщением.</div><div class="mgrid" id="mGrid"></div></div>`;
+    $("#mShot").onclick = () => $("#mInput").click(); $("#mInput").onchange = e => { uploadPhotos([...e.target.files], true); e.target.value = ""; }; this.load(); },
+  async load() { if (!sid) { this.items = []; return this.draw(); } try { this.items = await api(`/api/media/${sid}`); } catch { this.items = []; } this.draw(); },
+  draw() { const g = $("#mGrid"); if (!g) return; const llm = stateCache?.llm?.models?.[0];
+    $("#mVision").textContent = llm === "fast" ? "модель видит фото" : llm ? `«${llm}» не видит фото → fast` : "модель не загружена"; $("#mVision").className = "pill " + (llm === "fast" ? "ok" : "warn");
+    g.innerHTML = this.items.slice().reverse().map(m => `<div class="mthumb ${staged.has(m.name) ? "sel" : ""}" data-n="${esc(m.name)}"><img src="${esc(m.src)}" alt="" loading="lazy"><div class="ov"><button type="button" class="${staged.has(m.name) ? "primary" : ""} sm" data-stage="${esc(m.name)}">${staged.has(m.name) ? "✓ в сообщении" : "в чат"}</button><button type="button" class="sm" data-mdel="${esc(m.name)}" title="Удалить">✕</button></div></div>`).join("")
+      || `<div class="empty" style="grid-column:1/-1">${sid ? "Фото пока нет" : "Откройте сессию"}</div>`;
+    g.querySelectorAll("[data-stage]").forEach(b => b.onclick = e => { e.stopPropagation(); const n = b.dataset.stage; staged.has(n) ? staged.delete(n) : staged.add(n); renderStaged(); this.draw(); });
+    g.querySelectorAll("[data-mdel]").forEach(b => b.onclick = async e => { e.stopPropagation(); if (!confirm("Удалить фото?")) return; await api(`/api/media/${sid}/${b.dataset.mdel}`, {method: "DELETE"}); staged.delete(b.dataset.mdel); renderStaged(); this.load(); });
+    g.querySelectorAll(".mthumb").forEach(t => t.onclick = () => window.open(`/api/media/${sid}/${t.dataset.n}`, "_blank")); } };
 buildTabs(); openTab(tabs[activeTab] && !tabs[activeTab].disabled ? activeTab : "traces", false);   // on narrow screens the dock stays hidden until asked
 $("#dockToggle").onclick = () => $("#dock").classList.toggle("open"); $("#panelToggle").onclick = () => $("#panel").classList.toggle("open");
 
@@ -578,19 +680,22 @@ $("#profile").addEventListener("click", async e => {
   try { await api("/api/model", {method:"POST", body: JSON.stringify({profile: p})}); switching = p; refreshState(); } catch (err) { alert("Не удалось переключить: " + err.message); }
 });
 function renderProfile(s) {
-  const active = s.profiles.fast === "active" ? "fast" : s.profiles.deep === "active" ? "deep" : null;
-  const activating = s.profiles.fast === "activating" ? "fast" : s.profiles.deep === "activating" ? "deep" : null;
+  const P = ["fast", "deep", "nemotron"];
+  const active = P.find(p => s.profiles[p] === "active") || null;
+  const activating = P.find(p => s.profiles[p] === "activating") || null;
   if (s.llm.up) switching = null;
-  document.querySelectorAll("#profile button").forEach(b => { const p = b.dataset.prof; const on = s.llm.up && p === active; b.classList.toggle("active", on); b.style.background = on ? "var(--accS)" : ""; b.style.color = on ? "var(--acc)" : ""; b.textContent = (!s.llm.up && (p === activating || p === active || p === switching)) ? p + "…" : p; });
+  document.querySelectorAll("#profile button").forEach(b => { const p = b.dataset.prof; const on = s.llm.up && p === active; b.classList.toggle("active", on); b.style.background = on ? "var(--accS)" : ""; b.style.color = on ? "var(--acc)" : ""; const label = p === "nemotron" ? "nemo" : p; b.textContent = (!s.llm.up && (p === activating || p === active || p === switching)) ? label + "…" : label; });
 }
 
 // ---------- actions ----------
 window.addEventListener("hashchange", () => selectSession(location.hash.slice(1)));
 $("#newSession").onclick = async () => { const s = await api("/api/session", {method:"POST", body: JSON.stringify({title: "Сессия " + new Date().toLocaleString("ru", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"})})}); await refreshState(); location.hash = s.id; };
 $("#form").onsubmit = async e => {
-  e.preventDefault(); let text = $("#input").value.trim(); if (!text || !sid) return;
+  e.preventDefault(); let text = $("#input").value.trim(); const images = [...staged]; if ((!text && !images.length) || !sid) return;
   if (mode === "plan") text += "\n\n(Режим «План»: только диагностика и план действий, ничего не менять — запросы на изменение будут отклонены.)";
-  $("#input").value = ""; $("#input").style.height = ""; stickBottom = true; await api(`/api/session/${sid}/prompt`, {method:"POST", body: JSON.stringify({text})}); poll();
+  try { await api(`/api/session/${sid}/prompt`, {method:"POST", body: JSON.stringify({text, images})}); }
+  catch (err) { alert(err.message.replace(/^\d+ /, "").replace(/^\{"detail":"|"\}$/g, "")); return; }
+  $("#input").value = ""; $("#input").style.height = ""; stickBottom = true; staged.clear(); renderStaged(); poll();
 };
 $("#input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form").requestSubmit(); } });
 $("#input").addEventListener("input", e => { e.target.style.height = "auto"; e.target.style.height = Math.min(160, e.target.scrollHeight) + "px"; });

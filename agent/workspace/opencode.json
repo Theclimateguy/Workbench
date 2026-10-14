@@ -14,7 +14,17 @@
           "limit": {
             "context": 131072,
             "output": 8192
-          }
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "attachment": true
         },
         "deep": {
           "name": "gpt-oss-120b MXFP4 (deep)",
@@ -44,6 +54,18 @@
         "SUPPORT_AGENT_KEY": "/opt/support/keys/agent_ed25519",
         "SUPPORT_AUDIT_LOG": "/var/log/support/audit.jsonl"
       }
+    },
+    "library": {
+      "type": "local",
+      "command": [
+        "/opt/support/venv/bin/python",
+        "/opt/support/mcp/library.py"
+      ],
+      "enabled": true,
+      "environment": {
+        "LIBRARY_DIR": "/opt/library",
+        "HF_HUB_OFFLINE": "1"
+      }
     }
   },
   "permission": {
@@ -69,6 +91,9 @@
     "target-host_device_act": "ask",
     "target-host_workbench_run": "ask",
     "target-host_device_actuate": "ask",
-    "target-host_device_recover": "ask"
+    "target-host_device_recover": "ask",
+    "library_library_search": "allow",
+    "library_library_read": "allow",
+    "library_library_list": "allow"
   }
 }

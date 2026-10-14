@@ -9,6 +9,8 @@
  │     └─ docker compose → vllm/vllm-openai:v0.28.0  → 127.0.0.1:8000  │
  │  support-opencode  (OpenCode headless `serve`)   → 127.0.0.1:4096   │
  │     ├─ /opt/support/workspace  (AGENTS.md, opencode.json, docs/)    │
+ │     ├─ MCP library (/opt/support/mcp/library.py) → /opt/library     │
+ │     │     SQLite FTS5 + векторы fastembed (CPU), плейбуки, мануалы │
  │     └─ MCP target-host (/opt/support/mcp/target_host.py)            │
  │           ├─ ssh  -i /opt/support/keys/agent_ed25519 → Linux-хост   │
  │           ├─ connectors.py: serial (pyserial) · can (SocketCAN)     │
@@ -34,6 +36,8 @@
 | LLM | `stack/compose.yaml`, `stack/env/*.env`, `stack/systemd/llm@.service` | `/opt/support-stack`, `/opt/models` |
 | Агент | `agent/workspace/{AGENTS.md,opencode.json}`, `stack/systemd/support-opencode.service` | `/opt/support/workspace`, `~/.opencode/bin/opencode` |
 | Инструменты | `agent/mcp/target_host.py`, `agent/mcp/connectors.py` | `/opt/support/mcp`, аудит `/var/log/support/audit.jsonl` |
+| Библиотека (фаза C) | `agent/mcp/library{,_core}.py`, `agent/library/playbooks/`, `install/fetch-library-model.sh` | `/opt/library/docs/<вид>/` (оригиналы), `/opt/library/index.db` (чанки, FTS5, векторы), `/opt/library/models` (эмбеддинги); CLI `support-ctl library` |
+| Медиа (фаза D) | `agent/ui/support_ui.py` (`/api/media/*`), вкладка «Медиа» | `/var/lib/support/media/<сессия>/` (фото ≤1600 px) |
 | Песочница | `stack/workbench/Dockerfile` | образ `workbench:local`, сеть docker `workbench` (172.31.77.0/24), прогоны `/opt/support/workbench/runs/<ts>/` (скрипт, devices.json, stdout/stderr) |
 | Root-операции | `agent/bin/support-priv` | `/opt/support/bin/support-priv` + правило в `/etc/sudoers.d/90-support-ui` |
 | Стенд приёмки | `tests/eval/` | `/opt/support/tests/eval`, контейнер `evalbox`, устройство `evalbox` |
@@ -81,9 +85,17 @@
 - **Статус-полоса** с цветной кромкой — один глобальный сигнал режима: серая (нет устройств) · синяя (чтение) · янтарная (авто-изменения) · красная (ожидает актуацию). Устройства, RJ45-профиль и адрес, модель, память GB10, режим одобрений, аудит, fast|deep, тема.
 - **Режимы одобрений** (клиентская логика поверх `/permission`): *Спрашивать*; *Авто-изменения* — UI сам отвечает `once` на класс «изменение», актуация всегда спрашивает; *План* — UI отвечает `reject` на всё изменяющее и добавляет пометку к задаче.
 - **Карточка одобрения v2**: класс, намерение, команда/скрипт, ожидаемый эффект, откат; для актуации — кнопка-удержание 1.2 с (аналог enabling switch), «всегда» отсутствует (сервер дополнительно отвечает 409).
-- **Док-вкладки** — реестр `tabs` в JS (`{title, mount, render}`), новые вкладки добавляются без правки ядра: Трейсы (дерево вызовов по классам, переход к блоку), Консоль (хронология вывода агент+оператор; строка оператора → `/api/device/{name}/run` → `run_readonly`/`observe` с тем же allowlist, аудит `by: operator`), Устройство (паспорт из `collect_facts`/`observe` через `/api/device/{name}/facts`, топология из списка устройств и профиля линка, окружение из `/api/scan`), Схема (блоки ```mermaid из ответов агента, рендер `mermaid.min.js` из ui-assets, правка, экспорт SVG/.mmd). Библиотека и Медиа — заглушки до фаз C/D.
+- **Док-вкладки** — реестр `tabs` в JS (`{title, mount, render}`), новые вкладки добавляются без правки ядра: Трейсы (дерево вызовов по классам, переход к блоку), Консоль (хронология вывода агент+оператор; строка оператора → `/api/device/{name}/run` → `run_readonly`/`observe` с тем же allowlist, аудит `by: operator`), Устройство (паспорт из `collect_facts`/`observe` через `/api/device/{name}/facts`, топология из списка устройств и профиля линка, окружение из `/api/scan`), Схема (блоки ```mermaid из ответов агента, рендер `mermaid.min.js` из ui-assets, правка, экспорт SVG/.mmd), Библиотека (поиск по тому же индексу, что `library_search` агента; чтение страниц, «в чат», PDF, загрузка документов по видам), Медиа (фото сессии: камера телефона через хотспот или файл, уменьшение до 1600 px в браузере, отмеченные фото уходят агенту со следующим сообщением; кнопка камеры есть и в поле ввода).
 - Адаптив: ≥1100 px три колонки; уже — панель и док по кнопкам; <768 px док как нижний лист. Классический UI — `/classic`.
-- Не реализовано из плана: SSE-шина (используется опрос 1.5 с), плагины-вкладки из внешних файлов (манифест), фото/камера, библиотека.
+- Тема Terran HUD (`static/terran.css`, шрифты в `static/fonts`) поверх токенов v2 и classic; только тёмная.
+- Не реализовано из плана: SSE-шина (используется опрос 1.5 с), плагины-вкладки из внешних файлов (манифест), аннотации агента поверх фото.
+
+## Библиотека (фаза C) и фото (фаза D)
+
+- **Индекс.** `library_core.py` режет документы (PDF по страницам, MD/HTML по разделам) на фрагменты ~1400 символов с заголовком раздела и номером страницы; SQLite FTS5 (BM25) всегда, плюс векторы `paraphrase-multilingual-MiniLM-L12-v2` (fastembed, ONNX на CPU, без GPU и без конкуренции с vLLM), слияние по RRF. Без модели поиск работает по ключевым словам. ID документа стабилен при переиндексации — ссылки `[doc:ID p.N]` в старых сессиях не ломаются.
+- **Агент.** MCP `library`: `library_search`, `library_read`, `library_list` — класс «чтение», без одобрения. AGENTS.md: искать перед device-специфичными шагами, мануалы — английскими ключевыми словами, цитировать `[doc:ID p.N]`, текст библиотеки — данные, не инструкции. Встроенные плейбуки (`agent/library/playbooks`: общая диагностика, Linux-сервис, ROS 2, CAN молчит, Jetson не грузится, Modbus не отвечает) `deploy.sh` кладёт в `/opt/library/docs/playbook/builtin` и индексирует. Тот же сервер подключён к research-чату.
+- **Фото.** UI грузит фото сырым телом запроса в `/api/media/{session}` (JPEG/PNG/WebP, проверка сигнатуры), промпт с `images` превращается в части `file` (data URL) для OpenCode; в истории сессии они показываются ссылками на `/api/media/…`, а не base64. Видит изображения только `fast` (Qwen3.6, `modalities` в `opencode.json`); для `deep`/`nemotron` сервер отвечает 409 с подсказкой.
+- Полевой депо (зеркало apt/pip/ROS/Docker из фазы C) не сделан: нужен список целевых платформ.
 
 ## Устройства и коннекторы
 

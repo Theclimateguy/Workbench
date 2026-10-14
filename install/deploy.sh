@@ -15,6 +15,7 @@ log() { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 sudo install -d -o "$RUN_USER" -g "$RUN_USER" "$SUPPORT_DIR" "$STACK_DIR" /opt/models /opt/build/logs /opt/build/hf-cache
 sudo install -d -o "$RUN_USER" -g "$RUN_USER" -m 755 /var/log/support
 sudo install -d -m 755 /etc/support
+sudo install -d -o "$RUN_USER" -g "$RUN_USER" /opt/library /opt/library/docs /var/lib/support/media
 
 log "software -> $SUPPORT_DIR, $STACK_DIR"
 # Never clobber per-device state: targets/, keys/, workspace/docs/ (operator's documentation).
@@ -71,6 +72,14 @@ if [ -d "$SUPPORT_DIR/venv" ]; then
   log "python deps"
   "$SUPPORT_DIR/venv/bin/pip" install -q -r "$REPO/install/requirements.txt" 2>/dev/null \
     || log "  pip could not update deps (offline?) — keeping the installed versions"
+fi
+
+log "library: built-in playbooks -> /opt/library/docs/playbook/builtin, index refresh"
+mkdir -p /opt/library/docs/playbook/builtin
+rsync -a --delete "$REPO/agent/library/playbooks/" /opt/library/docs/playbook/builtin/
+if [ -x "$SUPPORT_DIR/venv/bin/python" ]; then
+  LIBRARY_DIR=/opt/library HF_HUB_OFFLINE=1 "$SUPPORT_DIR/venv/bin/python" "$SUPPORT_DIR/mcp/library_core.py" sync /opt/library/docs/playbook --kind playbook 2>&1 \
+    | grep -v "embeddings off" | sed 's/^/    /' || log "  library index refresh failed (see above)"
 fi
 
 if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
