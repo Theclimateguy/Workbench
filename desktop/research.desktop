@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Research
+Comment=Local research assistant (web, arXiv, Zenodo, GitHub)
+Comment[ru]=Локальный ассистент-исследователь
+Exec=xdg-open http://localhost:8090
+Icon=research-chat
+Terminal=false
+Categories=Science;Education;Utility;
+Keywords=research;chat;llm;arxiv;zenodo;
+StartupNotify=true

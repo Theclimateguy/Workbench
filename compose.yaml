@@ -1,0 +1,12 @@
+# Web search backend for the research chat. Started by research-search.service.
+services:
+  searxng:
+    image: searxng/searxng:2026.10.9-f4822b3fc
+    container_name: research-searxng
+    restart: unless-stopped
+    ports: ["127.0.0.1:8888:8080"]
+    environment:
+      - SEARXNG_SECRET=${SEARXNG_SECRET}
+      - SEARXNG_BASE_URL=http://127.0.0.1:8888/
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro

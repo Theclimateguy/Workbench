@@ -1,0 +1,16 @@
+[Unit]
+Description=Research chat web search backend (SearXNG on 127.0.0.1:8888)
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/research
+EnvironmentFile=/etc/research/research.env
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
