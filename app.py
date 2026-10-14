@@ -36,7 +36,7 @@ from urllib.parse import quote
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -241,7 +241,7 @@ app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 @app.middleware("http")
 async def auth(request: Request, call_next):
     local = request.client and request.client.host in ("127.0.0.1", "::1")
-    public = request.url.path in ("/manifest.json",) or request.url.path.startswith("/static/icons/")
+    public = request.url.path in ("/manifest.json", "/favicon.ico") or request.url.path.startswith("/static/icons/")
     if PASSWORD and not local and not public:
         h = request.headers.get("authorization", "")
         ok = False
@@ -261,6 +261,13 @@ async def auth(request: Request, call_next):
 @app.get("/", response_class=HTMLResponse)
 def index():
     return (HERE / "index.html").read_text()
+
+
+@app.get("/favicon.ico")
+def favicon():
+    """Browsers and bookmarks ask for /favicon.ico regardless of <link rel=icon>."""
+    return FileResponse(HERE / "static" / "icons" / "favicon.ico", media_type="image/x-icon",
+                        headers={"Cache-Control": "max-age=86400"})
 
 
 @app.get("/manifest.json")
