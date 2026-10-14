@@ -26,6 +26,12 @@ rsync -a "$REPO/agent/workspace/docs/" "$SUPPORT_DIR/workspace/docs/" --ignore-e
 rsync -a "$REPO/tests/" "$SUPPORT_DIR/tests/"
 mkdir -p "$SUPPORT_DIR/workbench/runs"
 rsync -a --delete "$REPO/stack/" "$STACK_DIR/"
+# Device-local LLM profile override (e.g. Nemotron as deep on a box without gpt-oss weights): /etc/support/<profile>.env
+for prof in fast deep; do
+  if sudo test -s "/etc/support/$prof.env"; then
+    sudo install -m 644 -o "$RUN_USER" -g "$RUN_USER" "/etc/support/$prof.env" "$STACK_DIR/env/$prof.env"; log "  env/$prof.env taken from /etc/support/$prof.env (device override)"
+  fi
+done
 chmod +x "$SUPPORT_DIR"/bin/*
 sudo ln -sf "$SUPPORT_DIR/bin/support-ctl" /usr/local/bin/support-ctl
 
