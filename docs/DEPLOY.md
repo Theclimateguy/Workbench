@@ -88,6 +88,7 @@ rsync -a /Volumes/SSD/models/ admin@10.77.0.1:/opt/models/            # пото
 - **Стенд приёмки** (не обязателен в поле): `tests/eval/stand.sh up` и `tests/eval/run.py` — см. [tests/eval/README.md](../tests/eval/README.md); контейнер `evalbox` можно снести `stand.sh down`.
 - **Голосовой ввод / PWA на уже развёрнутом Spark**: `support-ctl update`, затем `install/fetch-ui-assets.sh` (нужен интернет) и `support-ctl web` (выпустит сертификат и включит `support-ui-tls`).
 - **Свой профиль модели на одном устройстве** (например, Nemotron как `deep` там, где нет весов gpt-oss): положить env-файл в `/etc/support/deep.env` (образец — `stack/env/deep-nemotron.env`); `deploy.sh`/`support-ctl update` будут подставлять его вместо репозиторного `env/deep.env`. Убрать override — удалить файл и повторить `deploy.sh`.
+- **Удалённый доступ через VPS**: `support-ctl tunnel on USER@VPS` ставит юнит `workbench-tunnel` (обратный SSH, ключ `/etc/support/tunnel_ed25519`, параметры в `/etc/support/tunnel.env`); мануал, Приложение А3.
 - **Версии** (OpenCode, vLLM, модели): правка `install/versions.lock` в репозитории → `support-ctl update` → для образа/моделей вручную `bootstrap.sh` после удаления соответствующего маркера (`sudo rm /var/lib/support/bootstrap/vllm-image.done`).
 - **ОС**: `sudo apt full-upgrade` — отдельно, перед выездом, с последующим `support-ctl bench` (минимум 60 tok/s на fast — норма 95).
 - Что ещё посмотреть: `support-ctl version`.

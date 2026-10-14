@@ -36,7 +36,7 @@ chmod +x "$SUPPORT_DIR"/bin/*
 sudo ln -sf "$SUPPORT_DIR/bin/support-ctl" /usr/local/bin/support-ctl
 
 log "systemd units (user: $RUN_USER)"
-for u in llm@.service support-opencode.service support-ui.service support-ui-tls.service; do
+for u in llm@.service support-opencode.service support-ui.service support-ui-tls.service workbench-tunnel.service; do
   sed -e "s|^User=admin|User=$RUN_USER|; s|^Group=admin|Group=$RUN_USER|" \
       -e "s|/home/admin\b|$HOME|g" "$STACK_DIR/systemd/$u" | sudo tee "/etc/systemd/system/$u" >/dev/null
 done
