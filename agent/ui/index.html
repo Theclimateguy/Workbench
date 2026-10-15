@@ -316,9 +316,9 @@ async function refreshState() {
   try {
     const s = await api("/api/state"); stateCache = s;
     renderProfile(s); renderSelf(s.self_until);
-    const llm = $("#llmChip"); const up = s.llm.up, activating = s.profiles.fast === "activating" || s.profiles.deep === "activating" || switching;
+    const llm = $("#llmChip"); const up = s.llm.up, activating = Object.values(s.profiles || {}).includes("activating") || switching;
     llm.querySelector(".dot").className = "dot " + (up ? "ok" : activating ? "warn" : "dng");
-    const prof = s.profiles.fast === "active" ? "fast" : s.profiles.deep === "active" ? "deep" : null;
+    const prof = Object.keys(s.profiles || {}).find(k => s.profiles[k] === "active") || null;
     llm.querySelector(".l").textContent = up ? prof : activating ? "модель загружается…" : "LLM offline";
     llm.querySelector(".l2").textContent = up && prof ? (s.models?.[prof] || "") : "";
     $("#modelPill").textContent = up && prof ? `${prof} · ${(s.models?.[prof] || "").replace(/-A3B.*|-NVFP4|-MXFP4/g, "")}` : "LLM offline";

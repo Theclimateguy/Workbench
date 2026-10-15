@@ -309,7 +309,7 @@ def _box_status() -> dict:
 def _model_names() -> dict:
     """Human names of the profiles from stack env files (MODEL_PATH basename)."""
     out = {}
-    for prof in ("fast", "deep"):
+    for prof in ("fast", "deep", "nemotron"):
         env = STACK_DIR / "env" / f"{prof}.env"
         name = ""
         if env.exists():

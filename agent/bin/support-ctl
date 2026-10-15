@@ -48,7 +48,7 @@ ensure_key() {
 
 cmd_status() {
   echo "== LLM"
-  for p in fast deep; do
+  for p in fast deep nemotron; do
     printf '  llm@%s: %s\n' "$p" "$(systemctl is-active "llm@$p" 2>/dev/null || true)"
   done
   if curl -sf "$LLM_URL/v1/models" >/dev/null 2>&1; then
