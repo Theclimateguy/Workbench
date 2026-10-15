@@ -15,7 +15,7 @@ log() { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 sudo install -d -o "$RUN_USER" -g "$RUN_USER" "$SUPPORT_DIR" "$STACK_DIR" /opt/models /opt/build/logs /opt/build/hf-cache
 sudo install -d -o "$RUN_USER" -g "$RUN_USER" -m 755 /var/log/support
 sudo install -d -m 755 /etc/support
-sudo install -d -o "$RUN_USER" -g "$RUN_USER" /opt/library /opt/library/docs /var/lib/support/media
+sudo install -d -o "$RUN_USER" -g "$RUN_USER" /opt/library /opt/library/docs /var/lib/support/media /var/lib/support/state
 
 log "software -> $SUPPORT_DIR, $STACK_DIR"
 # Never clobber per-device state: targets/, keys/, workspace/docs/ (operator's documentation).

@@ -46,9 +46,13 @@ WORKBENCH_IMAGE = os.environ.get("SUPPORT_WORKBENCH_IMAGE", "workbench:local")
 SUPPORT_CTL = os.environ.get("SUPPORT_CTL", "/usr/local/bin/support-ctl")
 PRIV = os.environ.get("SUPPORT_PRIV", "/opt/support/bin/support-priv")
 NOTES_DIR = Path(os.environ.get("SUPPORT_NOTES_DIR", "/opt/support/workspace/docs/devices"))
-# The Workbench box itself (a target "self" / 127.0.0.1 exists for smoke tests): read-only for the agent,
-# so it cannot become a jump host or a place to run password scripts. Tests set SUPPORT_ALLOW_SELF_CHANGES=1.
+# The Workbench box itself (target "self" / 127.0.0.1): read-only for the agent unless the OPERATOR opened it for a
+# limited time (UI strip "Workbench" or `support-ctl self unlock [MIN]`), which writes SELF_UNLOCK. The model cannot
+# open it: while locked it cannot run anything on the box, and while open the commands that touch the unlock itself
+# are refused. Each change still needs the usual approval. Smoke tests set SUPPORT_ALLOW_SELF_CHANGES=1.
 ALLOW_SELF_CHANGES = os.environ.get("SUPPORT_ALLOW_SELF_CHANGES") == "1"
+SELF_UNLOCK = Path(os.environ.get("SUPPORT_SELF_UNLOCK", "/var/lib/support/state/self-unlock.json"))
+SELF_TAMPER_RE = re.compile(r"self-unlock|/api/self\b|support-ctl\s+self\b")
 
 # Commands the agent may run without confirmation. First token of every
 # pipeline segment must be here; no redirections, no command substitution.
@@ -144,14 +148,31 @@ def _is_self(cfg: dict) -> bool:
     return cfg["NAME"] == "self" or cfg.get("HOST") in ("127.0.0.1", "localhost", "::1")
 
 
-def _self_guard(cfg: dict, tool: str) -> str | None:
-    if _is_self(cfg) and not ALLOW_SELF_CHANGES:
-        _audit({"tool": tool, "target": cfg["NAME"], "rejected": "workbench box itself"})
-        return (f"REJECTED: '{cfg['NAME']}' is the Workbench box itself — the agent may only read it. Do not use it as a "
-                "jump host to other machines (no ssh/pexpect/sshpass/paramiko from here). If a device is not reachable "
-                "with the agent key, ask the operator to connect it (UI: Устройство → «Подключить устройство», or "
-                "`support-ctl target add NAME USER@HOST`).")
-    return None
+def self_unlocked_until() -> float:
+    """Epoch until which the operator allowed changes on the Workbench box, or 0."""
+    import time
+    try:
+        until = float(json.loads(SELF_UNLOCK.read_text()).get("until", 0))
+    except (OSError, ValueError):
+        return 0.0
+    return until if until > time.time() else 0.0
+
+
+def _self_guard(cfg: dict, tool: str, payload: str = "") -> str | None:
+    if not _is_self(cfg) or ALLOW_SELF_CHANGES:
+        return None
+    until = self_unlocked_until()
+    if until and not SELF_TAMPER_RE.search(payload):
+        return None
+    if until:
+        _audit({"tool": tool, "target": cfg["NAME"], "rejected": "touches the self unlock"})
+        return "REJECTED: this command touches the Workbench unlock; only the operator opens or extends it."
+    _audit({"tool": tool, "target": cfg["NAME"], "rejected": "workbench box itself (locked)"})
+    return (f"REJECTED: '{cfg['NAME']}' is the Workbench box itself and it is locked — the agent may only read it. "
+            "If the operator explicitly wants you to change something on the Workbench box, ask them to open it for a "
+            "limited time: UI strip «Workbench» → открыть, or `support-ctl self unlock 30`. Never use it as a jump host "
+            "to other machines (no ssh/pexpect/sshpass/paramiko from here); a device that refuses the agent key is "
+            "connected by the operator (UI: Устройство → «+ Подключить», or `support-ctl target add NAME USER@HOST`).")
 
 
 ACCESS_HINT = ("\n[hint] The agent key is not accepted by this host (it was never onboarded, or the key was removed). "
@@ -339,7 +360,7 @@ async def run_change(cmd: str, reason: str, target: str = "ws") -> str:
     if connectors.POWER_FIRMWARE_RE.search(cmd):
         _audit({"tool": "run_change", "target": target, "cmd": cmd, "reason": reason, "rejected": "actuation class"})
         return "REJECTED: this command powers/flashes/formats hardware (ACTUATION class). Call device_actuate with a rollback plan, or reboot_and_wait."
-    if (g := _self_guard(cfg, "run_change")):
+    if (g := _self_guard(cfg, "run_change", cmd)):
         return g
     r = await _run_ssh(cfg, cmd, timeout=600)
     _audit({"tool": "run_change", "target": target, "cmd": cmd, "reason": reason, "rc": r["rc"], "class": "config"})
@@ -352,7 +373,7 @@ async def write_file(path: str, content: str, reason: str, target: str = "ws", m
     Requires user approval."""
     cfg = _load_target(target)
     _ssh_only(cfg, "write_file")
-    if (g := _self_guard(cfg, "write_file")):
+    if (g := _self_guard(cfg, "write_file", path + "\n" + content)):
         return g
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     q = shlex.quote(path)

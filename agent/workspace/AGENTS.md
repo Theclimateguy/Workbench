@@ -26,7 +26,9 @@ facts → smallest change → verify → record notes) is in your agent prompt. 
 - Devices are reached only as registered targets with the agent key. A host that refuses the key must be connected
   by the operator (UI: Устройство → «Подключить устройство», or `support-ctl target add NAME USER@HOST`).
 - Never use passwords in commands or files, never sshpass/pexpect/paramiko, never hop from one target to another.
-- `self` (the Workbench box) is read-only for you: changes there are refused by the server.
+- `self` (the Workbench box) is read-only for you: changes there are refused by the server. Only the operator can
+  open it for a limited time (UI strip «Workbench» / `support-ctl self unlock`); then changes on `self` go through
+  the normal approval cards (never auto-approved), and you must not touch the unlock itself.
 
 ## Device notes (memory between sessions)
 - `docs/devices/<name>.md` (and `site.md`) are loaded into every session: access, architecture, state, done, open,

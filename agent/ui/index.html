@@ -190,6 +190,7 @@
       <span id="modeIcon"></span>
       <select id="mode"><option value="ask">Спрашивать</option><option value="auto">Авто-изменения</option><option value="plan">План</option></select>
     </label>
+    <button type="button" class="ghost sm" id="selfBtn" title="Workbench (self): закрыт — агент может только читать. Нажмите, чтобы разрешить изменения на самом Workbench на время">Workbench 🔒</button>
     <button type="button" class="ghost sm" id="auditBtn" title="Журнал действий агента">аудит · <span id="auditN">0</span></button>
     <div class="pill" id="profile" title="Профиль модели: fast — быстрый, deep — рассуждает дольше. Переключение 6–12 минут." style="padding:0; overflow:hidden; gap:0">
       <button type="button" class="ghost sm" data-prof="fast" style="border-radius:0; min-height:24px">fast</button><button type="button" class="ghost sm" data-prof="deep" style="border-radius:0; min-height:24px">deep</button><button type="button" class="ghost sm" data-prof="nemotron" style="border-radius:0; min-height:24px" title="Nemotron 3 Super 120B">nemo</button>
@@ -314,7 +315,7 @@ applyMode();
 async function refreshState() {
   try {
     const s = await api("/api/state"); stateCache = s;
-    renderProfile(s);
+    renderProfile(s); renderSelf(s.self_until);
     const llm = $("#llmChip"); const up = s.llm.up, activating = s.profiles.fast === "activating" || s.profiles.deep === "activating" || switching;
     llm.querySelector(".dot").className = "dot " + (up ? "ok" : activating ? "warn" : "dng");
     const prof = s.profiles.fast === "active" ? "fast" : s.profiles.deep === "active" ? "deep" : null;
@@ -433,7 +434,8 @@ function renderMessages(d) {
 async function autoMode(d, calls) {
   for (const p of d.pending) {
     const cls = toolClass(permTool(p, calls)); if (cls === "read") continue;
-    if (mode === "auto" && cls === "config") { await api(`/api/session/${sid}/permission/${p.id}`, {method:"POST", body: JSON.stringify({response: "once"})}); }
+    const tgt = (calls[p.tool?.callID] || {}).input?.target || p.metadata?.input?.target;
+    if (mode === "auto" && cls === "config" && tgt !== "self") { await api(`/api/session/${sid}/permission/${p.id}`, {method:"POST", body: JSON.stringify({response: "once"})}); }
     if (mode === "plan") { await api(`/api/session/${sid}/permission/${p.id}`, {method:"POST", body: JSON.stringify({response: "reject"})}); }
   }
 }
@@ -691,6 +693,20 @@ tabs.media = { title: "Медиа", items: [],
     g.querySelectorAll(".mthumb").forEach(t => t.onclick = () => window.open(`/api/media/${sid}/${t.dataset.n}`, "_blank")); } };
 buildTabs(); openTab(tabs[activeTab] && !tabs[activeTab].disabled ? activeTab : "traces", false);   // on narrow screens the dock stays hidden until asked
 $("#dockToggle").onclick = () => $("#dock").classList.toggle("open"); $("#panelToggle").onclick = () => $("#panel").classList.toggle("open");
+
+// ---------- the Workbench box itself (target self): operator opens it for agent changes for a limited time ----------
+let selfUntil = 0;
+function renderSelf(until) {
+  selfUntil = until || 0; const b = $("#selfBtn"); if (!b) return;
+  const open = selfUntil > Date.now() / 1000;
+  b.textContent = open ? `Workbench открыт до ${new Date(selfUntil * 1000).toLocaleTimeString("ru", {hour: "2-digit", minute: "2-digit"})}` : "Workbench 🔒";
+  b.style.color = open ? "var(--warn)" : ""; b.style.boxShadow = open ? "inset 0 0 0 1px var(--warn)" : "";
+  b.title = open ? "Агенту разрешены изменения на самом Workbench (каждое — с вашим подтверждением). Нажмите, чтобы закрыть." : "Workbench (self): закрыт — агент может только читать. Нажмите, чтобы разрешить изменения на время.";
+}
+$("#selfBtn").onclick = async () => {
+  if (selfUntil > Date.now() / 1000) { await api("/api/self", {method: "DELETE"}); return refreshState(); }
+  const m = prompt("Разрешить агенту изменения на самом Workbench (self) на сколько минут? Каждое изменение всё равно спросит подтверждение.", "30");
+  if (!m) return; try { await api("/api/self", {method: "POST", body: JSON.stringify({minutes: parseInt(m, 10)})}); } catch (e) { alert(e.message); } refreshState(); };
 
 // ---------- model profile toggle ----------
 let switching = null;

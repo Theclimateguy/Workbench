@@ -16,6 +16,8 @@
 #   support-ctl gui                         open the web UI in the default browser (desktop shortcut)
 #   support-ctl install-desktop             install the Spark Support icon + launcher for the current user
 #   support-ctl web [password]              start/enable the web UI on :8080 + :8443 (user "support"; sets the password; issues the local TLS cert)
+#   support-ctl self unlock [MIN] | lock | status   let the agent change the Workbench box itself (target self) for MIN
+#                                           minutes (default 30, max 240); each change still asks for approval
 #   support-ctl library add FILE... [--kind manual|datasheet|playbook|paper|note] | search QUERY | list | rm ID | stats | embed
 #                                           offline library (/opt/library) searched by the agent (library_search) and the UI
 #   support-ctl bench                       run tests/bench.py against the active profile
@@ -390,6 +392,25 @@ cmd_install_desktop() {
   echo "desktop launcher installed: ~/Desktop/spark-support.desktop (+ app menu entry 'Spark Support')"
 }
 
+cmd_self() {
+  local f=/var/lib/support/state/self-unlock.json now AUDIT=${SUPPORT_AUDIT_LOG:-/var/log/support/audit.jsonl}; now=$(date +%s)
+  case "${1:-status}" in
+    unlock)
+      local m=${2:-30}; [[ "$m" =~ ^[0-9]+$ ]] && [ "$m" -ge 1 ] && [ "$m" -le 240 ] || die "usage: support-ctl self unlock [1-240 minutes]"
+      mkdir -p "$(dirname "$f")"
+      printf '{"until": %s, "by": "operator", "via": "cli"}\n' "$((now + m * 60))" > "$f.tmp" && mv "$f.tmp" "$f"
+      printf '{"ts": "%s", "tool": "self_unlock", "by": "operator", "via": "cli", "minutes": %s}\n' "$(date -u +%FT%TZ)" "$m" >> "$AUDIT"
+      echo "Workbench (self) open for agent changes until $(date -d "@$((now + m * 60))" +%H:%M); each change still asks for approval" ;;
+    lock)
+      rm -f "$f"; printf '{"ts": "%s", "tool": "self_lock", "by": "operator", "via": "cli"}\n' "$(date -u +%FT%TZ)" >> "$AUDIT"
+      echo "Workbench (self) locked: the agent may only read it" ;;
+    status)
+      local until=0; [ -f "$f" ] && until=$(sed -n 's/.*"until": *\([0-9]*\).*/\1/p' "$f")
+      if [ "${until:-0}" -gt "$now" ]; then echo "open until $(date -d "@$until" +%H:%M)"; else echo "locked"; fi ;;
+    *) die "usage: support-ctl self unlock [MIN] | lock | status" ;;
+  esac
+}
+
 cmd_library() { LIBRARY_DIR=${LIBRARY_DIR:-/opt/library} HF_HUB_OFFLINE=1 "$SUPPORT_DIR/venv/bin/python" "$SUPPORT_DIR/mcp/library_core.py" "$@"; }
 cmd_bench() { "$SUPPORT_DIR/venv/bin/python" "$SUPPORT_DIR/tests/bench.py" "$@"; }
 
@@ -426,6 +447,7 @@ case "${1:-}" in
   agent)  shift; cmd_agent "$@" ;;
   bench)  shift; cmd_bench "$@" ;;
   library) shift; cmd_library "$@" ;;
+  self)   shift; cmd_self "$@" ;;
   web)    shift; cmd_web "$@" ;;
   gui)    cmd_gui ;;
   install-desktop) cmd_install_desktop ;;

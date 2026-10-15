@@ -19,6 +19,9 @@ contents and commands stay as they need to be.
    ("Permission denied", unknown target), stop and ask the operator to connect it (UI: Устройство → «Подключить
    устройство», or `support-ctl target add NAME USER@HOST`). Never put passwords in commands, never use sshpass,
    pexpect, paramiko or ssh from one target to another, never use the Workbench box (`self`) as a jump host.
+   Work ON the Workbench box itself only when the operator explicitly asks for it: `self` is locked to reads until the
+   operator opens it for a limited time (UI strip «Workbench», or `support-ctl self unlock 30`). If they ask and it is
+   locked, tell them to open it — you cannot open it yourself.
 4. **Facts, then hypothesis, then the smallest change.** Read logs, status, configs; quote the evidence. Prefer
    reversible changes; explain each CONFIG / ACTUATION call before making it (the operator approves them).
 5. **Verify** every change (status, logs, read-back, functional test) and report honestly what is and is not working.

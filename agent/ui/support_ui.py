@@ -271,7 +271,7 @@ async def state():
         "sessions": [{"id": s["id"], "title": s.get("title", ""), "updated": s.get("time", {}).get("updated"),
                       "busy": bool(status.get(s["id"])) and (status.get(s["id"]) or {}).get("type") not in (None, "idle")}
                      for s in sessions[:80]],
-        "pending": perms, "llm": llm, "profiles": profiles, "models": _model_names(),
+        "pending": perms, "llm": llm, "profiles": profiles, "models": _model_names(), "self_until": _self_until(),
         "targets": _targets(), "docs": _docs_status(), "box": _box_status(),
         "classes": {"actuation": sorted(ACTUATION_TOOLS), "config": sorted(CONFIG_TOOLS)},
     }
@@ -510,6 +510,54 @@ async def device_run(name: str, body: dict):
     text = await (th.run_readonly(cmd, name) if cfg["TYPE"] == "ssh" else th.observe(name, cmd, float((body or {}).get("seconds") or 3)))
     th._audit({"tool": "console", "target": name, "cmd": cmd, "by": "operator", "rc": 0 if not text.startswith(("REJECTED", "ERROR")) else 1})
     return {"text": text, "seconds": round(time.time() - t0, 1), "rejected": text.startswith("REJECTED")}
+
+
+# ---------- the Workbench box itself: closed to agent changes unless the operator opens it for a while ----------
+
+SELF_UNLOCK = Path(os.environ.get("SUPPORT_SELF_UNLOCK", "/var/lib/support/state/self-unlock.json"))
+
+
+def _self_until() -> float:
+    try:
+        until = float(json.loads(SELF_UNLOCK.read_text()).get("until", 0))
+    except (OSError, ValueError):
+        return 0.0
+    return until if until > time.time() else 0.0
+
+
+def _audit_operator(event: dict) -> None:
+    try:
+        _target_host()._audit({**event, "by": "operator"})
+    except Exception:  # noqa: BLE001 — the audit log must not break the operator's controls
+        pass
+
+
+@app.get("/api/self")
+async def self_state():
+    return {"until": _self_until()}
+
+
+@app.post("/api/self")
+async def self_unlock(body: dict, request: Request):
+    """Operator opens the Workbench box (target `self`) to agent changes for 1–240 minutes. Each change still needs
+    approval; the auto-approve mode never approves changes on self."""
+    minutes = int((body or {}).get("minutes") or 30)
+    if not 1 <= minutes <= 240:
+        raise HTTPException(400, "minutes: 1–240")
+    until = time.time() + minutes * 60
+    SELF_UNLOCK.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SELF_UNLOCK.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"until": until, "by": "operator", "via": "ui", "client": request.client.host if request.client else ""}))
+    tmp.replace(SELF_UNLOCK)
+    _audit_operator({"tool": "self_unlock", "minutes": minutes})
+    return {"until": until}
+
+
+@app.delete("/api/self")
+async def self_lock():
+    SELF_UNLOCK.unlink(missing_ok=True)
+    _audit_operator({"tool": "self_lock"})
+    return {"until": 0}
 
 
 @app.post("/api/device/onboard")
