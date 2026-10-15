@@ -332,8 +332,13 @@ async def _run_ssh(cfg: dict, remote_cmd: str, timeout: int = SSH_TIMEOUT, stdin
     return {"rc": rc, "stdout": out, "stderr": err}
 
 
+HARMLESS_REDIRECTS = re.compile(r"\s+2>&1(?=\s|\||$)|\s+2>\s*/dev/null(?=\s|\||$)")
+
+
 def _classify_readonly(cmd: str) -> str | None:
-    """Return None if cmd is read-only per allowlist, else a reason string."""
+    """Return None if cmd is read-only per allowlist, else a reason string.
+    `2>&1` and `2>/dev/null` write nothing to disk; models append them by habit, so they do not count as redirections."""
+    cmd = HARMLESS_REDIRECTS.sub("", cmd)
     for meta in SHELL_META:
         if meta in cmd:
             return f"shell operator '{meta.strip()}' not allowed in read-only commands"
