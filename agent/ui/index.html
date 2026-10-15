@@ -214,7 +214,7 @@
       <div class="foot" id="foot"></div>
     </aside>
     <main id="main">
-      <div class="chat-head" id="chatHead"><span class="title" id="chatTitle">—</span><span class="pill" id="chatStat" style="display:none"></span><span class="grow"></span><span class="pill" id="busy" style="display:none">думает…</span><button type="button" class="sm" id="abort" style="display:none">Стоп</button><button type="button" class="ghost sm" id="exportSession" title="Скачать сессию как Markdown">Экспорт</button></div>
+      <div class="chat-head" id="chatHead"><span class="title" id="chatTitle">—</span><span class="pill" id="chatStat" style="display:none"></span><span class="grow"></span><span class="pill" id="busy" style="display:none">думает…</span><span class="pill warn" id="repeatStat" style="display:none" title="Одинаковые вызовы инструментов в этой сессии (тот же инструмент с теми же аргументами)"></span><button type="button" class="sm" id="abort" style="display:none">Стоп</button><button type="button" class="sm" id="stopReport" style="display:none" title="Прервать и попросить агента описать, что он пробовал и что предлагает">Стоп и отчёт</button><button type="button" class="ghost sm" id="exportSession" title="Скачать сессию как Markdown">Экспорт</button></div>
       <div id="log"></div>
       <button id="toBottom" type="button" class="sm" style="display:none">↓ вниз</button>
       <div id="auditView" class="view" style="display:none"></div>
@@ -348,7 +348,36 @@ function permTool(p, calls) {
   const call = calls[p.tool?.callID] || {};
   return (call.tool || p.metadata?.tool || p.tool?.name || p.permission || "").replace(/^target-host_/, "");
 }
+const STOP_REPORT = "Остановись: ты повторяешь одни и те же действия. Ничего не запускай. Коротко опиши: что ты пробовал, что каждый раз видел, почему это не работает и какой другой подход предлагаешь. Запиши это в заметки устройства (раздел open) и обнови план.";
+function renderLoopCard(p, calls) {
+  const call = calls[p.tool?.callID] || {}; const tool = permTool(p, calls); const i = call.input || p.metadata?.input || {};
+  const what = i.cmd || i.action || i.query || i.path || (i.script ? "скрипт в песочнице" : "") || JSON.stringify(i);
+  return `<div class="perm actuation loop" data-pid="${p.id}" data-cls="loop" data-tool="${esc(tool)}">
+    <div class="cls">Агент повторяет одно и то же</div>
+    <div class="title">${esc(tool)}${i.target || i.device ? " · " + esc(i.target || i.device) : ""} — тот же вызов несколько раз подряд</div>
+    <pre>${esc(String(what).slice(0, 1500))}</pre>
+    <div class="why">Похоже на петлю. Остановите агента и попросите отчёт, подскажите, что делать иначе, или разрешите ещё одну попытку.</div>
+    <div class="actions">
+      <button type="button" data-loop="once" title="Ещё одна такая же попытка">Разрешить ещё раз</button>
+      <button type="button" data-loop="hint">Подсказать…</button>
+      <button type="button" class="primary" data-loop="stop">Остановить и отчитаться</button>
+    </div></div>`;
+}
+async function answerLoop(card, act) {
+  const pid = card.dataset.pid; card.querySelectorAll("button").forEach(x => x.disabled = true);
+  try {
+    if (act === "once") { await api(`/api/session/${sid}/permission/${pid}`, {method: "POST", body: JSON.stringify({response: "once"})}); return poll(); }
+    const hint = act === "hint" ? prompt("Что агенту сделать иначе?", "") : STOP_REPORT;
+    if (!hint) { card.querySelectorAll("button").forEach(x => x.disabled = false); return; }
+    await api(`/api/session/${sid}/permission/${pid}`, {method: "POST", body: JSON.stringify({response: "reject"})});
+    await api(`/api/session/${sid}/abort`, {method: "POST"}).catch(() => {});
+    await new Promise(r => setTimeout(r, 800));
+    await api(`/api/session/${sid}/prompt`, {method: "POST", body: JSON.stringify({text: act === "hint" ? "Оператор: ты повторяешь одно и то же. " + hint : hint})});
+  } catch (err) { alert("Не удалось: " + err.message); card.querySelectorAll("button").forEach(x => x.disabled = false); }
+  poll();
+}
 function renderPerm(p, calls) {
+  if (p.permission === "doom_loop") return renderLoopCard(p, calls);
   const call = calls[p.tool?.callID] || {};
   const i = Object.keys(p.metadata?.input || {}).length ? p.metadata.input : (call.input || p.metadata || {});
   const tool = permTool(p, calls), cls = toolClass(tool), what = WHAT[tool] || tool;
@@ -425,6 +454,11 @@ function renderMessages(d) {
   const nTools = d.messages.reduce((a, m) => a + m.parts.filter(p => p.type === "tool").length, 0);
   const nChange = d.messages.reduce((a, m) => a + m.parts.filter(p => p.type === "tool" && toolClass((p.tool||"").replace(/^target-host_/, "")) !== "read").length, 0);
   $("#chatStat").style.display = nTools ? "" : "none"; $("#chatStat").textContent = `${nTools} шагов · ${nChange} изменений`;
+  const seen = {}; let reps = 0, guard = 0;
+  d.messages.forEach(m => m.parts.forEach(p => { if (p.type !== "tool") return; const k = p.tool + JSON.stringify(p.input || {}); if (seen[k]) reps++; seen[k] = (seen[k] || 0) + 1; if (/^(REPEATED|REFUSED) \(loop guard\)/.test(p.output || "")) guard++; }));
+  $("#repeatStat").style.display = reps ? "" : "none"; $("#repeatStat").textContent = `повторов: ${reps}${guard ? ` · защита ×${guard}` : ""}`;
+  $("#repeatStat").className = "pill " + (guard || reps >= 5 ? "dng" : "warn");
+  $("#stopReport").style.display = d.busy ? "" : "none";
   $("#send").disabled = !sid;
   setEdge();
   autoMode(d, calls);
@@ -433,6 +467,7 @@ function renderMessages(d) {
 // graduated autonomy: auto = approve CONFIG class automatically (actuation still asks); plan = reject every change
 async function autoMode(d, calls) {
   for (const p of d.pending) {
+    if (p.permission === "doom_loop") continue;          // the loop brake is always the operator's call
     const cls = toolClass(permTool(p, calls)); if (cls === "read") continue;
     const tgt = (calls[p.tool?.callID] || {}).input?.target || p.metadata?.input?.target;
     if (mode === "auto" && cls === "config" && tgt !== "self") { await api(`/api/session/${sid}/permission/${p.id}`, {method:"POST", body: JSON.stringify({response: "once"})}); }
@@ -505,10 +540,11 @@ function buildTabs() {
 tabs.traces = { title: "Трейсы", filter: "all",
   mount(h) { h.innerHTML = `<div class="tabbar"><span style="font-weight:600">Вызовы инструментов</span><span class="grow"></span><select id="trFilter" style="font:inherit;font-size:12px;border:1px solid var(--bd2);border-radius:8px;padding:3px 6px;background:var(--surf);color:var(--tx)"><option value="all">все классы</option><option value="read">чтение</option><option value="config">изменение</option><option value="actuation">актуация</option></select></div><div class="tabbody" id="trBody"></div>`;
     $("#trFilter").value = this.filter; $("#trFilter").onchange = () => { this.filter = $("#trFilter").value; lastData && this.render(lastData); }; },
-  render(d) { const b = $("#trBody"); if (!b) return; let i = 0; const rows = [];
+  render(d) { const b = $("#trBody"); if (!b) return; let i = 0; const rows = []; const cnt = {};
+    d.messages.forEach(m => m.parts.forEach(p => { if (p.type === "tool") { const k = p.tool + JSON.stringify(p.input || {}); cnt[k] = (cnt[k] || 0) + 1; } }));
     d.messages.forEach(m => m.parts.forEach(p => { if (p.type !== "tool") return; const n = (p.tool||"").replace(/^target-host_/, ""), cls = toolClass(n); const idx = i++; if (this.filter !== "all" && cls !== this.filter) return;
       const brief = p.input?.cmd || p.input?.path || p.input?.action || p.input?.query || p.input?.what || (p.input?.script ? "скрипт" : ""); const dur = p.time?.start && p.time?.end ? ((p.time.end-p.time.start)/1000).toFixed(1)+" с" : ""; const rc = (p.output||"").match(/^rc=(\d+)/);
-      rows.push(`<div class="trace ${cls}" data-id="tool-${p.callID || idx}">${p.status === "completed" ? ICON.ok : p.status === "error" ? ICON.err : ICON.run}<b>${esc(n)}</b>${p.input?.device || p.input?.target ? `<span class="pill">${esc(p.input.device || p.input.target)}</span>` : ""}<span class="brief mono">${esc(brief)}</span>${rc ? `<span class="pill ${rc[1]==="0"?"ok":"dng"} mono">rc=${rc[1]}</span>` : ""}<span class="t">${dur}</span></div>`); }));
+      rows.push(`<div class="trace ${cls}" data-id="tool-${p.callID || idx}">${p.status === "completed" ? ICON.ok : p.status === "error" ? ICON.err : ICON.run}<b>${esc(n)}</b>${p.input?.device || p.input?.target ? `<span class="pill">${esc(p.input.device || p.input.target)}</span>` : ""}<span class="brief mono">${esc(brief)}</span>${rc ? `<span class="pill ${rc[1]==="0"?"ok":"dng"} mono">rc=${rc[1]}</span>` : ""}${cnt[p.tool + JSON.stringify(p.input || {})] > 1 ? `<span class="pill warn mono" title="Этот же вызов в сессии">×${cnt[p.tool + JSON.stringify(p.input || {})]}</span>` : ""}${/^(REPEATED|REFUSED) \(loop guard\)/.test(p.output || "") ? `<span class="pill dng">защита</span>` : ""}<span class="t">${dur}</span></div>`); }));
     b.innerHTML = rows.join("") || `<div class="empty">В этой сессии вызовов ещё нет</div>`;
     b.querySelectorAll(".trace").forEach(r => r.onclick = () => { const el = document.getElementById(r.dataset.id); if (el) { el.open = true; el.scrollIntoView({behavior:"smooth", block:"center"}); stickBottom = false; } }); } };
 // Консоль: live output of the device(s) + operator read-only commands (same allowlist, audited as operator)
@@ -736,6 +772,7 @@ $("#form").onsubmit = async e => {
 $("#input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form").requestSubmit(); } });
 $("#input").addEventListener("input", e => { e.target.style.height = "auto"; e.target.style.height = Math.min(160, e.target.scrollHeight) + "px"; });
 $("#abort").onclick = () => api(`/api/session/${sid}/abort`, {method:"POST"});
+$("#stopReport").onclick = async () => { if (!sid) return; await api(`/api/session/${sid}/abort`, {method: "POST"}).catch(() => {}); await new Promise(r => setTimeout(r, 800)); await api(`/api/session/${sid}/prompt`, {method: "POST", body: JSON.stringify({text: STOP_REPORT})}); poll(); };
 $("#exportSession").onclick = () => { if (sid) location.href = `/api/session/${sid}/export`; };
 async function answerPerm(card, resp) {
   const pid = card.dataset.pid; card.querySelectorAll("button").forEach(x => x.disabled = true);
@@ -763,6 +800,7 @@ $("#log").addEventListener("click", async e => {
     if (answers.every(a => !a.length)) { alert("Выберите вариант или впишите ответ"); return; }
     card.querySelectorAll("button").forEach(x => x.disabled = true); await api(`/api/session/${sid}/question/${qid}`, {method:"POST", body: JSON.stringify({answers})}); poll(); return;
   }
+  const lb = e.target.closest("button[data-loop]"); if (lb) { answerLoop(lb.closest(".perm"), lb.dataset.loop); return; }
   const b = e.target.closest("button[data-resp]"); if (!b || b.dataset.hold) return;
   answerPerm(b.closest(".perm"), b.dataset.resp);
 });

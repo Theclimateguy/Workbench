@@ -22,7 +22,11 @@ Devices are defined in $SUPPORT_TARGETS_DIR/<name>.env; TYPE= selects the connec
 from __future__ import annotations
 
 import asyncio
+import collections
 import datetime as dt
+import functools
+import hashlib
+import inspect
 import json
 import os
 import re
@@ -95,6 +99,101 @@ SHELL_META = ("&&", "||", ";", ">", ">>", "<", "`", "$(", "&", "\n")
 mcp = FastMCP("target-host")
 
 
+# ---------- loop guard: the server stops repeated calls, whatever the model or the UI do ----------
+# exact  = same tool + same arguments; refused when the previous LOOP_EXACT calls in LOOP_WINDOW all returned the
+#          same result (digits ignored, so timestamps/pids do not make results "different"); a changed result resets it.
+# shape  = same tool + target + command with every number blanked (sleep 5 -> sleep 10, .111 -> .112): failing calls
+#          of one shape get a warning from the LOOP_SHAPE_WARN-th and are refused from the LOOP_SHAPE_REFUSE-th.
+LOOP_WINDOW = int(os.environ.get("SUPPORT_LOOP_WINDOW", "900"))
+LOOP_EXACT = int(os.environ.get("SUPPORT_LOOP_EXACT", "2"))
+LOOP_SHAPE_WINDOW = int(os.environ.get("SUPPORT_LOOP_SHAPE_WINDOW", "600"))
+LOOP_SHAPE_WARN = int(os.environ.get("SUPPORT_LOOP_SHAPE_WARN", "4"))
+LOOP_SHAPE_REFUSE = int(os.environ.get("SUPPORT_LOOP_SHAPE_REFUSE", "7"))
+_loop_hist: collections.deque = collections.deque(maxlen=500)
+_loop_noted: dict[str, float] = {}
+_FAIL_RE = re.compile(r"^(REJECTED|ERROR)|^rc=(?!0\b)\d+|Permission denied|timeout after|not reachable|Connection refused|No route to host", re.M)
+
+
+def _blank(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"\d+", "#", text or "")).strip().lower()
+
+
+def _loop_keys(tool: str, args: dict) -> tuple[str, str, str, str]:
+    target = str(args.get("target") or args.get("device") or "")
+    main = args.get("cmd") or args.get("action") or args.get("query") or args.get("path") or args.get("script") or ""
+    extra = hashlib.sha1(str(args.get("content", "")).encode()).hexdigest()[:8] if "content" in args else ""
+    exact = json.dumps([tool, target, main, extra, args.get("what", "")], ensure_ascii=False)
+    shape = json.dumps([tool, target, _blank(str(main))], ensure_ascii=False)
+    return target, str(main), exact, shape
+
+
+def _loop_note(target: str, tool: str, main: str, why: str, sample: str) -> None:
+    """Leave the dead end in the device notes ('open'), at most once per 30 min per shape, so the next session
+    does not walk into it again. Commands that look like they carry a secret are not copied."""
+    import time
+    key = f"{target}|{tool}|{_blank(main)[:200]}"
+    if time.time() - _loop_noted.get(key, 0) < 1800 or target not in _target_names():
+        return
+    _loop_noted[key] = time.time()
+    cmd = "[command not recorded: looks like it contains a secret]" if SECRET_RE.search(main) else main.strip().splitlines()[0][:160] if main.strip() else "(no arguments)"
+    first = next((ln.strip() for ln in sample.splitlines() if ln.strip() and not ln.startswith("rc=")), "")[:160]
+    line = f"- {dt.datetime.now():%Y-%m-%d %H:%M} защита от повторов: `{tool}` `{cmd}` — {why}; результат: {first or '—'}. Не повторять без новой причины."
+    try:
+        p = _notes_path(target)
+        sec = _notes_parse(p.read_text()) if p.exists() else {}
+        lines = [ln for ln in sec.get("open", "").splitlines() if ln.strip()] + [line]
+        while len("\n".join(lines)) > NOTE_SECTION_MAX and len(lines) > 1:
+            lines.pop(0)
+        sec["open"] = "\n".join(lines)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_notes_render(target, sec))
+    except (OSError, ValueError):
+        pass
+
+
+def loop_guarded(fn):
+    """Decorator for target-host tools (keeps the signature, so the MCP schema is unchanged)."""
+    sig = inspect.signature(fn)
+
+    @functools.wraps(fn)
+    async def wrapper(*a, **kw):
+        import time
+        b = sig.bind(*a, **kw); b.apply_defaults()
+        tool = fn.__name__
+        target, main, exact, shape = _loop_keys(tool, dict(b.arguments))
+        now = time.time()
+        same = [h for h in _loop_hist if h["exact"] == exact and now - h["t"] < LOOP_WINDOW]
+        if len(same) >= LOOP_EXACT and len({h["fp"] for h in same[-LOOP_EXACT:]}) == 1:
+            n = len(same) + 1
+            _audit({"tool": tool, "target": target, "loop_guard": "exact", "count": n, "cmd": main[:300]})
+            if same[-1]["failed"]:     # a dead end worth remembering; a repeated successful read is just noise
+                _loop_note(target, tool, main, f"{n}-й одинаковый вызов с тем же результатом", same[-1]["sample"])
+            return (f"REPEATED (loop guard): this exact {tool} call already ran {len(same)} times in the last "
+                    f"{LOOP_WINDOW // 60} min and returned the same result every time:\n{same[-1]['sample'][:600]}\n\n"
+                    "Do not run it again. Use the result you have; change the approach for a stated reason, check your plan "
+                    "and the device notes, or ask the operator. If you are waiting for a change, say what you are waiting for "
+                    "and ask the operator to tell you when it happened. (Noted in the device notes as an open question.)")
+        fails = [h for h in _loop_hist if h["shape"] == shape and h["failed"] and now - h["t"] < LOOP_SHAPE_WINDOW]
+        if len(fails) >= LOOP_SHAPE_REFUSE:
+            _audit({"tool": tool, "target": target, "loop_guard": "shape", "count": len(fails) + 1, "cmd": main[:300]})
+            _loop_note(target, tool, main, f"{len(fails)} неудачных однотипных попыток за {LOOP_SHAPE_WINDOW // 60} мин", fails[-1]["sample"])
+            return (f"REFUSED (loop guard): {len(fails)} calls of this kind ({tool} on {target or 'the box'}, differing only in "
+                    f"numbers) failed in the last {LOOP_SHAPE_WINDOW // 60} min. Last result:\n{fails[-1]['sample'][:600]}\n\n"
+                    "Stop varying parameters. Write down what you tried and what you saw (plan + device notes 'open'), then "
+                    "take a different approach for a stated reason or ask the operator.")
+        out = await fn(*a, **kw)
+        text = out if isinstance(out, str) else str(out)
+        failed = bool(_FAIL_RE.search(text[:2000]))
+        _loop_hist.append({"t": now, "exact": exact, "shape": shape, "failed": failed,
+                           "fp": hashlib.sha1(_blank(text[:4000]).encode()).hexdigest(), "sample": text[:800]})
+        if failed and len(fails) >= LOOP_SHAPE_WARN:
+            text += (f"\n\n[loop guard] This is failure {len(fails) + 1} of this kind of call in {LOOP_SHAPE_WINDOW // 60} min. "
+                     "Before the next attempt, change something that matters or ask the operator; at "
+                     f"{LOOP_SHAPE_REFUSE + 1} the server refuses.")
+        return text
+    return wrapper
+
+
 # ---------- helpers ----------
 
 def _audit(event: dict) -> None:
@@ -145,7 +244,8 @@ def _load_target(name: str) -> dict:
 
 
 def _is_self(cfg: dict) -> bool:
-    return cfg["NAME"] == "self" or cfg.get("HOST") in ("127.0.0.1", "localhost", "::1")
+    # the box's own sshd; the eval stand's container is 127.0.0.1 too, but on its own port (2222)
+    return cfg["NAME"] == "self" or (cfg.get("HOST") in ("127.0.0.1", "localhost", "::1") and str(cfg.get("PORT", "22")) == "22")
 
 
 def self_unlocked_until() -> float:
@@ -294,6 +394,7 @@ def target_list() -> str:
 
 
 @mcp.tool()
+@loop_guarded
 async def collect_facts(target: str = "ws") -> str:
     """Snapshot of the target host: OS, hardware, disks, network, failed units, recent errors, GPU, packages state."""
     cfg = _load_target(target)
@@ -320,6 +421,7 @@ echo "### reboot"; [ -f /var/run/reboot-required ] && cat /var/run/reboot-requir
 
 
 @mcp.tool()
+@loop_guarded
 async def run_readonly(cmd: str, target: str = "ws") -> str:
     """Run a read-only diagnostic command on the target (logs, status, configs). Pipes allowed; no redirections.
     Rejected commands must go through run_change."""
@@ -335,6 +437,7 @@ async def run_readonly(cmd: str, target: str = "ws") -> str:
 
 
 @mcp.tool()
+@loop_guarded
 async def read_file(path: str, target: str = "ws", max_bytes: int = 40000) -> str:
     """Read a file from the target (uses sudo if needed). Output is truncated to max_bytes."""
     cfg = _load_target(target)
@@ -350,6 +453,7 @@ async def read_file(path: str, target: str = "ws", max_bytes: int = 40000) -> st
 # ---------- mutating tools (harness asks the user before each call) ----------
 
 @mcp.tool()
+@loop_guarded
 async def run_change(cmd: str, reason: str, target: str = "ws") -> str:
     """CONFIG class: run a command that CHANGES an ssh device (install, restart, edit, apply). Requires user approval.
     `reason` must say what and why; it goes to the audit log. Power-cycling, flashing firmware and disk
@@ -368,6 +472,7 @@ async def run_change(cmd: str, reason: str, target: str = "ws") -> str:
 
 
 @mcp.tool()
+@loop_guarded
 async def write_file(path: str, content: str, reason: str, target: str = "ws", mode: str = "") -> str:
     """Write a whole file on the target. Keeps a timestamped backup next to it and returns the diff.
     Requires user approval."""
@@ -394,6 +499,7 @@ echo "### written {path} (backup: {path}.bak-{stamp})"
 
 
 @mcp.tool()
+@loop_guarded
 async def reboot_and_wait(reason: str, target: str = "ws", wait_seconds: int = 300) -> str:
     """ACTUATION class: reboot an ssh device and wait until SSH is back. Requires user approval (never 'always')."""
     import time
@@ -495,6 +601,7 @@ def device_note_save(device: str, section: str, text: str, mode: str = "replace"
 # ---------- device connectors: observe / act / actuate / recover (serial, can, modbus, http) ----------
 
 @mcp.tool()
+@loop_guarded
 async def observe(device: str, query: str = "", seconds: float = 3) -> str:
     """READ class: look at a non-ssh device without changing it.
       serial : passive listen for `seconds` (query empty or 'listen'); sending text is device_actuate
@@ -517,6 +624,7 @@ async def observe(device: str, query: str = "", seconds: float = 3) -> str:
 
 
 @mcp.tool()
+@loop_guarded
 async def device_act(device: str, action: str, reason: str, seconds: float = 3) -> str:
     """CONFIG class (approval per call): change settings on a device that is NOT physical actuation.
       http   : 'POST|PUT|PATCH|DELETE /path [json body]'
@@ -539,6 +647,7 @@ async def device_act(device: str, action: str, reason: str, seconds: float = 3) 
 
 
 @mcp.tool()
+@loop_guarded
 async def device_actuate(device: str, action: str, reason: str, rollback: str, seconds: float = 3) -> str:
     """ACTUATION class (approval per call, never 'always'): talk to hardware or power/flash a host.
       serial : 'send:<text>' (EOL appended) | 'hex:<bytes>' | 'dtr:0|1' | 'rts:0|1' | 'break'
@@ -567,6 +676,7 @@ async def device_actuate(device: str, action: str, reason: str, rollback: str, s
 
 
 @mcp.tool()
+@loop_guarded
 async def device_recover(device: str, reason: str) -> str:
     """ACTUATION class (approval per call): bring a device back — ssh: reboot and wait; serial: reset pulse on
     DTR/RTS; can: interface down/up (bus-off recovery); modbus/http: reconnect and probe."""
@@ -604,6 +714,7 @@ async def scan(what: str = "all") -> str:
 # ---------- workbench sandbox ----------
 
 @mcp.tool()
+@loop_guarded
 async def workbench_run(script: str, reason: str, language: str = "python", devices: str = "",
                         network: str = "none", timeout: int = 120, usb: bool = False) -> str:
     """CONFIG class (approval per call): run YOUR OWN script in the workbench sandbox — a throw-away Docker

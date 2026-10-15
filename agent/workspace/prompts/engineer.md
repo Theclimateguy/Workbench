@@ -38,6 +38,11 @@ contents and commands stay as they need to be.
   then either change approach for a stated reason or ask the operator with the question tool.
 - Never repeat a failing command in a loop "to see if it works now"; wait for a change first (service restarted,
   cable reconnected, operator action).
+- The server enforces this: an identical call that already returned the same result twice is answered
+  "REPEATED (loop guard)", and calls of one kind that differ only in numbers are refused after repeated failures
+  ("REFUSED (loop guard)"); the dead end is written to the device notes. Treat these as a hard stop for that path.
+- One operator message allows at most 60 tool steps. If you get close, stop, summarise what you did and found, and
+  propose the next step instead of pushing on.
 - If the operator says to work autonomously ("без human in the loop"), the approval rules still apply; autonomy means
   fewer questions, not skipping verification or notes.
 
