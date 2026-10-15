@@ -2,7 +2,7 @@
 # support-ctl — operator CLI for the Spark support stack.
 #   support-ctl status                      stack health (LLM, targets, docs)
 #   support-ctl model fast|deep|nemotron    switch the LLM profile (mutually exclusive)
-#   support-ctl target add NAME USER@HOST   register a Linux host (ssh) and install the agent key there
+#   support-ctl target add NAME USER@HOST [--password-stdin]   register a Linux host (ssh), install the agent key there
 #   support-ctl target list|test NAME
 #   support-ctl device add NAME TYPE KEY=VAL...   register a non-ssh device: serial PORT= BAUD= | can IFACE= BITRATE= |
 #                                           modbus HOST= PORT= UNIT= (or PORT=/dev/tty.. BAUD=) | http URL= [AUTH=u:p]
@@ -92,11 +92,32 @@ cmd_target() {
         ( . "$f"; printf '  %s: %s@%s:%s  (mdns: %s, mac: %s, last: %s)\n' "$(basename "$f" .env)" "${USER:-support-agent}" "$HOST" "${PORT:-22}" "${MDNS:-—}" "${MAC:-—}" "${IP_LAST:-—}" )
       done ;;
     add)
-      local name=${1:-} userhost=${2:-}; [ -n "$name" ] && [ -n "$userhost" ] || die "usage: support-ctl target add NAME USER@HOST[:PORT]"
+      local name=${1:-} userhost=${2:-} pwstdin=${3:-}; [ -n "$name" ] && [ -n "$userhost" ] || die "usage: support-ctl target add NAME USER@HOST[:PORT] [--password-stdin]"
+      [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,31}$ ]] || die "bad target name: $name"
       ensure_key
       local host=${userhost#*@} port=22; [[ "$host" == *:* ]] && { port=${host#*:}; host=${host%%:*}; }
-      echo "Installing agent user on $host via $userhost (asks for that user's password/sudo) ..."
-      ssh -t -p "$port" "$userhost" "sudo bash -s" < "$SUPPORT_DIR/bin/onboard-target.sh" -- "$(cat "$KEY.pub")"
+      local ruser=${userhost%@*}; local userhost_np="$ruser@$host"
+      if [ "$pwstdin" = "--password-stdin" ]; then
+        # Non-interactive (web UI "Подключить устройство"): the password arrives on stdin once, is used for the ssh
+        # login (SSH_ASKPASS) and for sudo on the target (sudo -S), and is never written anywhere but a 0600 file
+        # in a private temp dir that is removed right after.
+        local pw tmp; IFS= read -r pw || true; [ -n "$pw" ] || die "empty password"
+        tmp=$(mktemp -d); chmod 700 "$tmp"; printf '%s\n' "$pw" > "$tmp/pw"; chmod 600 "$tmp/pw"
+        printf '#!/bin/sh\ncat "%s/pw"\n' "$tmp" > "$tmp/askpass"; chmod 700 "$tmp/askpass"
+        local b64; b64=$(base64 -w0 < "$SUPPORT_DIR/bin/onboard-target.sh")
+        echo "Installing agent user on $host as $ruser (password from the operator) ..."
+        local rc=0
+        SSH_ASKPASS="$tmp/askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=:0 setsid -w ssh \
+          -o StrictHostKeyChecking=accept-new -o HostKeyAlias="$name" -o ConnectTimeout=15 -o NumberOfPasswordPrompts=1 \
+          -o PreferredAuthentications=password,keyboard-interactive -o PubkeyAuthentication=no -p "$port" "$userhost_np" \
+          "S=\$(mktemp); echo $b64 | base64 -d > \$S; sudo -S -p '' bash \$S '$(cat "$KEY.pub")'; r=\$?; rm -f \$S; exit \$r" \
+          < "$tmp/pw" || rc=$?
+        rm -rf "$tmp"; unset pw
+        [ "$rc" = 0 ] || die "onboarding failed (rc=$rc): wrong password, no sudo for $ruser, or host unreachable"
+      else
+        echo "Installing agent user on $host via $userhost_np (asks for that user's password/sudo) ..."
+        ssh -t -p "$port" "$userhost_np" "sudo bash -s" < "$SUPPORT_DIR/bin/onboard-target.sh" -- "$(cat "$KEY.pub")"
+      fi
       # Identity that survives address changes: hostname (mDNS) + MAC of the link we see it on.
       local sshq="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o HostKeyAlias=$name -i $KEY -p $port support-agent@$host"
       local rhost; rhost=$($sshq hostname 2>/dev/null || true)
@@ -104,6 +125,7 @@ cmd_target() {
       ping -c 1 -W 1 "$ip4" >/dev/null 2>&1 || true
       local mac; mac=$(ip neigh show "$ip4" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="lladdr") print $(i+1)}' | head -1)
       [ -z "$mac" ] && mac=$($sshq "ip -o link show | awk -F'link/ether ' '/link\/ether/ && !/docker|veth|br-/{print \$2}' | awk '{print \$1}' | head -1" 2>/dev/null || true)
+      [ -f "$TARGETS/$name.env" ] && cp "$TARGETS/$name.env" "$TARGETS/$name.env.bak-$(date +%Y%m%d-%H%M%S)"
       {
         echo "HOST=auto"; echo "USER=support-agent"; echo "PORT=$port"; echo "KEY=$KEY"
         [ -n "$rhost" ] && echo "MDNS=$rhost.local"

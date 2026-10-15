@@ -171,7 +171,7 @@ async def main(a) -> int:
     if a.ssh_target:
         src = Path(os.environ.get("SUPPORT_TARGETS_DIR", "/opt/support/targets")) / f"{a.ssh_target}.env"
         shutil.copy(src, targets / f"{a.ssh_target}.env")
-    env = {**os.environ, "SUPPORT_TARGETS_DIR": str(targets), "SUPPORT_AUDIT_LOG": str(audit),
+    env = {**os.environ, "SUPPORT_TARGETS_DIR": str(targets), "SUPPORT_AUDIT_LOG": str(audit), "SUPPORT_ALLOW_SELF_CHANGES": "1",
            "SUPPORT_WORKBENCH_DIR": str(tmp / "workbench")}
     fails = 0
 

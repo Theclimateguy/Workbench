@@ -154,10 +154,10 @@ def embedder():
 
 
 def _embed(texts: list[str]):
-    import numpy as np
-    e = embedder()
+    e = embedder()                        # None without fastembed/numpy or the model: keyword search only
     if not e:
         return None
+    import numpy as np
     v = np.array(list(e.embed(texts, batch_size=32)), dtype="float32")
     return v / (np.linalg.norm(v, axis=1, keepdims=True) + 1e-9)
 

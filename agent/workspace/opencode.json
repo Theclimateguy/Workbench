@@ -38,6 +38,24 @@
   },
   "model": "spark/fast",
   "small_model": "spark/fast",
+  "default_agent": "engineer",
+  "agent": {
+    "engineer": {
+      "mode": "primary",
+      "description": "Field engineer: diagnoses and repairs on-site equipment through target-host tools, keeps device notes between sessions.",
+      "prompt": "{file:./prompts/engineer.md}"
+    },
+    "compaction": {
+      "prompt": "{file:./prompts/compaction.md}"
+    }
+  },
+  "compaction": {
+    "auto": true
+  },
+  "tool_output": {
+    "max_lines": 400,
+    "max_bytes": 16384
+  },
   "instructions": [
     "docs/**/*.md"
   ],
@@ -94,6 +112,13 @@
     "target-host_device_recover": "ask",
     "library_library_search": "allow",
     "library_library_read": "allow",
-    "library_library_list": "allow"
+    "library_library_list": "allow",
+    "todowrite": "allow",
+    "target-host_device_notes": "allow",
+    "target-host_device_note_save": "allow",
+    "external_directory": {
+      "*": "ask",
+      "~/.local/share/opencode/tool-output/*": "allow"
+    }
   }
 }

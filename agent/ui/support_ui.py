@@ -52,6 +52,7 @@ SUPPORT_CTL = os.environ.get("SUPPORT_CTL", "/usr/local/bin/support-ctl")
 STACK_DIR = Path(os.environ.get("SUPPORT_STACK_DIR", "/opt/support-stack"))
 LIBRARY_DIR = Path(os.environ.get("LIBRARY_DIR", "/opt/library"))
 MEDIA_DIR = Path(os.environ.get("SUPPORT_MEDIA_DIR", "/var/lib/support/media"))
+NOTES_DIR = Path(os.environ.get("SUPPORT_NOTES_DIR", str(Path(WORKSPACE) / "docs" / "devices")))
 VISION_MODELS = {"fast"}            # profiles whose model sees images (opencode.json: modalities)
 
 
@@ -509,6 +510,43 @@ async def device_run(name: str, body: dict):
     text = await (th.run_readonly(cmd, name) if cfg["TYPE"] == "ssh" else th.observe(name, cmd, float((body or {}).get("seconds") or 3)))
     th._audit({"tool": "console", "target": name, "cmd": cmd, "by": "operator", "rc": 0 if not text.startswith(("REJECTED", "ERROR")) else 1})
     return {"text": text, "seconds": round(time.time() - t0, 1), "rejected": text.startswith("REJECTED")}
+
+
+@app.post("/api/device/onboard")
+async def device_onboard(body: dict):
+    """Operator connects a Linux host: name + user@host[:port] + that user's password (typed in the UI, used once by
+    `support-ctl target add --password-stdin`, never stored or shown to the agent). Installs the agent key there."""
+    name = str((body or {}).get("name", "")).strip()
+    userhost = str((body or {}).get("userhost", "")).strip()
+    password = str((body or {}).get("password", ""))
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}", name):
+        raise HTTPException(400, "имя: латиница, цифры, - и _, до 32 символов")
+    if not re.fullmatch(r"[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+", userhost):
+        raise HTTPException(400, "адрес в виде user@host или user@host:port")
+    if not password or "\n" in password:
+        raise HTTPException(400, "нужен пароль")
+    try:
+        r = await asyncio.to_thread(subprocess.run, [SUPPORT_CTL, "target", "add", name, userhost, "--password-stdin"],
+                                    input=password + "\n", capture_output=True, text=True, timeout=300)
+        out, rc = (r.stdout + r.stderr).replace(password, "***"), r.returncode
+    except subprocess.TimeoutExpired:
+        out, rc = "timeout: host did not answer in 5 minutes", 124
+    finally:
+        password = ""
+    try:
+        _target_host()._audit({"tool": "onboard", "by": "operator", "target": name, "userhost": userhost, "rc": rc})
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": rc == 0, "rc": rc, "text": out[-4000:]}
+
+
+@app.get("/api/device/{name}/notes")
+async def device_notes(name: str):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}", name):
+        raise HTTPException(400, "bad name")
+    p = NOTES_DIR / f"{name}.md"
+    return {"name": name, "text": p.read_text() if p.exists() else "", "path": str(p),
+            "updated": p.stat().st_mtime if p.exists() else None}
 
 
 @app.post("/api/scan")

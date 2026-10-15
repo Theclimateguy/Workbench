@@ -383,6 +383,9 @@ function renderTool(p, idx) {
   const icon = p.status === "completed" ? ICON.ok : p.status === "error" ? ICON.err : ICON.run;
   const dur = p.time?.start && p.time?.end ? `${((p.time.end - p.time.start)/1000).toFixed(1)} с` : "";
   const name = (p.tool || "").replace(/^(target-host|library)_/, ""), cls = toolClass(name);
+  if (name === "todowrite" && Array.isArray(p.input?.todos)) {
+    const mark = { completed: "☑", in_progress: "◐", cancelled: "☒" };
+    return `<details class="tool read plan" id="tool-${p.callID || idx}" open><summary><b>план</b><span class="brief mono">${p.input.todos.filter(t => t.status === "completed").length}/${p.input.todos.length} готово</span></summary><pre>${p.input.todos.map(t => `${mark[t.status] || "☐"} ${esc(t.content)}`).join("\n")}</pre></details>`; }
   const brief = p.input?.cmd || p.input?.path || p.input?.action || p.input?.query || (p.input?.script ? (p.input.language || "python") + ": " + p.input.script.split("\n")[0] : "") || p.input?.what || "";
   const dev = p.input?.device || p.input?.target;
   const rc = (p.output || "").match(/^rc=(\d+)/); const rcPill = rc ? `<span class="pill ${rc[1]==="0"?"ok":"dng"} mono">rc=${rc[1]}</span>` : (p.output || "").startsWith("REJECTED") ? `<span class="pill dng">отклонено защитой</span>` : "";
@@ -522,8 +525,8 @@ tabs.console = { title: "Консоль", ops: [],
     const body = b.parentElement; body.scrollTop = body.scrollHeight; } };
 // Устройство: passport + topology + scan
 tabs.device = { title: "Устройство", cur: null, facts: {}, scan: null, sub: "passport",
-  mount(h) { h.innerHTML = `<div class="tabbar"><div class="pill" style="padding:0;overflow:hidden;gap:0"><button type="button" class="ghost sm" data-sub="passport" style="min-height:24px;border-radius:0">Паспорт</button><button type="button" class="ghost sm" data-sub="topology" style="min-height:24px;border-radius:0">Топология</button><button type="button" class="ghost sm" data-sub="scan" style="min-height:24px;border-radius:0">Окружение</button></div><span class="grow"></span><span class="pill" id="devStamp"></span><button type="button" class="sm" id="devRefresh">Обновить</button><a id="devReport" href="#" download><button type="button" class="ghost sm">Отчёт</button></a></div><div class="tabbody" id="devBody"></div>`;
-    h.querySelectorAll("button[data-sub]").forEach(b => b.onclick = () => { this.sub = b.dataset.sub; this.draw(); }); $("#devRefresh").onclick = () => this.sub === "scan" ? this.doScan() : this.load(this.cur || targetName, true);
+  mount(h) { h.innerHTML = `<div class="tabbar"><div class="pill" style="padding:0;overflow:hidden;gap:0"><button type="button" class="ghost sm" data-sub="passport" style="min-height:24px;border-radius:0">Паспорт</button><button type="button" class="ghost sm" data-sub="topology" style="min-height:24px;border-radius:0">Топология</button><button type="button" class="ghost sm" data-sub="scan" style="min-height:24px;border-radius:0">Окружение</button><button type="button" class="ghost sm" data-sub="notes" style="min-height:24px;border-radius:0" title="Что агент записал об устройстве для следующих сессий">Заметки</button></div><button type="button" class="ghost sm" id="devConnect" title="Поставить ключ агента на Linux-хост по логину и паролю">+ Подключить</button><span class="grow"></span><span class="pill" id="devStamp"></span><button type="button" class="sm" id="devRefresh">Обновить</button><a id="devReport" href="#" download><button type="button" class="ghost sm">Отчёт</button></a></div><div class="tabbody" id="devBody"></div>`;
+    h.querySelectorAll("button[data-sub]").forEach(b => b.onclick = () => { this.sub = b.dataset.sub; this.draw(); }); $("#devConnect").onclick = () => { this.sub = "connect"; this.draw(); }; $("#devRefresh").onclick = () => this.sub === "scan" ? this.doScan() : this.load(this.cur || targetName, true);
     if (!this.cur && targetName) this.load(targetName); else this.draw(); },
   async load(name, force) { this.cur = name; if (!name) return this.draw(); $("#devReport").href = `/api/device/${encodeURIComponent(name)}/report`;
     if (!force && this.facts[name]) return this.draw(); const b = $("#devBody"); if (b) b.innerHTML = `<div class="empty">Собираю паспорт ${esc(name)}…</div>`;
@@ -557,6 +560,23 @@ tabs.device = { title: "Устройство", cur: null, facts: {}, scan: null,
       b.innerHTML = `<div class="legend"><span><span class="dot ok"></span> паспорт собран</span><span><span class="dot dng"></span> недоступно</span><span><span class="dot"></span> собирается</span> · клик по узлу — паспорт; внутри узла — оборудование станции (GPU, диски, сеть, USB, serial)</div><div class="topo" style="align-items:flex-start"><div class="node"><div class="n">${ICON.chip}${esc(s.box?.host || "GB10")}</div><div class="s">${esc(link ? (link.profile ? link.profile + " · " : "") + (link.addr || link.state) : "Workbench")}</div></div>${nodes || `<div class="empty">устройств нет</div>`}</div>`;
       b.querySelectorAll(".node[data-dev]").forEach(n => n.onclick = () => { this.sub = "passport"; this.load(n.dataset.dev); });
       this.loadAll(s.targets); return; }
+    if (this.sub === "connect") {
+      b.innerHTML = `<div class="card" style="max-width:460px"><div class="ch">Подключить Linux-хост</div>
+        <div class="legend" style="padding:0 0 8px">Агенту ставится свой ключ и пользователь support-agent. Пароль нужен один раз: он не сохраняется, не попадает в чат и агенту не виден. Пользователь должен иметь sudo.</div>
+        <div style="display:flex;flex-direction:column;gap:8px"><input class="q mono" id="obName" placeholder="имя устройства, напр. remote" value="${esc(name || "")}"><input class="q mono" id="obHost" placeholder="user@host или user@host:port" autocomplete="off"><input class="q mono" id="obPw" type="password" placeholder="пароль этого пользователя" autocomplete="new-password"><div style="display:flex;gap:8px"><button type="button" class="primary sm" id="obGo">Подключить</button><button type="button" class="ghost sm" id="obCancel">Отмена</button></div><pre id="obOut" style="display:none"></pre></div></div>`;
+      $("#obCancel").onclick = () => { this.sub = "passport"; this.draw(); };
+      $("#obGo").onclick = async () => { const body = { name: $("#obName").value.trim(), userhost: $("#obHost").value.trim(), password: $("#obPw").value };
+        $("#obPw").value = ""; $("#obGo").disabled = true; $("#obOut").style.display = ""; $("#obOut").textContent = "Подключаю… (до минуты)";
+        try { const r = await api("/api/device/onboard", { method: "POST", body: JSON.stringify(body) }); $("#obOut").textContent = (r.ok ? "Готово.\n" : "Не получилось.\n") + r.text; if (r.ok) { refreshState(); this.facts[body.name] = null; } }
+        catch (e) { $("#obOut").textContent = "Ошибка: " + e.message; } $("#obGo").disabled = false; };
+      return; }
+    if (this.sub === "notes") {
+      if (!name) { b.innerHTML = `<div class="empty">Устройств нет</div>`; return; }
+      b.innerHTML = `<div class="empty">Загружаю заметки…</div>`;
+      api(`/api/device/${encodeURIComponent(name)}/notes`).then(n => { if (this.sub !== "notes") return;
+        b.innerHTML = n.text ? `<div class="devhead">${ICON.server}<div><div class="n">${esc(name)}</div><div class="s">${esc(n.path)} · обновлено ${new Date(n.updated * 1000).toLocaleString("ru")}</div></div></div><div class="agent">${fmt(n.text.replace(/^# .*\n/, ""))}</div>`
+          : `<div class="empty">Агент ещё ничего не записал про ${esc(name)}. Заметки появляются, когда он сохраняет доступ, архитектуру, сделанное и открытые вопросы (device_note_save); новые сессии читают их сами.</div>`; }).catch(e => { b.innerHTML = `<div class="err">${esc(e.message)}</div>`; });
+      return; }
     if (this.sub === "scan") { const sc = this.scan; if (!sc) { b.innerHTML = `<div class="empty">Что подключено к Workbench: USB, serial-порты, CAN, хосты на каждом линке, mDNS.<br><br><button type="button" class="sm" id="scanNow">Сканировать</button></div>`; $("#scanNow").onclick = () => this.doScan(); return; }
       if (sc.error) { b.innerHTML = `<div class="err">${esc(sc.error)}</div>`; return; }
       const icons = { "USB": ICON.usb, "Serial ports": ICON.chip, "CAN interfaces": ICON.net, "Network links": ICON.net }; b.innerHTML = `<div class="cards">` + Object.entries(sc.sections).map(([k, v]) => `<div class="card" style="grid-column:1/-1"><div class="ch">${icons[k] || ICON.box}${esc(k)}</div><pre>${esc(v || "—")}</pre></div>`).join("") + `</div>`; return; }
