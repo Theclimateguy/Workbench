@@ -110,6 +110,21 @@ LOOP_SHAPE_WINDOW = int(os.environ.get("SUPPORT_LOOP_SHAPE_WINDOW", "600"))
 LOOP_SHAPE_WARN = int(os.environ.get("SUPPORT_LOOP_SHAPE_WARN", "4"))
 LOOP_SHAPE_REFUSE = int(os.environ.get("SUPPORT_LOOP_SHAPE_REFUSE", "7"))
 _loop_hist: collections.deque = collections.deque(maxlen=500)
+# Counters restart (1) for a call right after the guard fired on it and (2) for everything when the operator sends a
+# new message — support-ui touches LOOP_RESET then; the operator stepping in makes it a new situation.
+LOOP_RESET = Path(os.environ.get("SUPPORT_LOOP_RESET", "/var/lib/support/state/loop-reset"))
+
+
+def _loop_forget(pred) -> None:
+    keep = [h for h in _loop_hist if not pred(h)]
+    _loop_hist.clear(); _loop_hist.extend(keep)
+
+
+def _loop_reset_stamp() -> float:
+    try:
+        return LOOP_RESET.stat().st_mtime
+    except OSError:
+        return 0.0
 _loop_noted: dict[str, float] = {}
 _FAIL_RE = re.compile(r"^(REJECTED|ERROR)|^rc=(?!0\b)\d+|Permission denied|timeout after|not reachable|Connection refused|No route to host", re.M)
 
@@ -162,14 +177,19 @@ def loop_guarded(fn):
         tool = fn.__name__
         target, main, exact, shape = _loop_keys(tool, dict(b.arguments))
         now = time.time()
+        reset_at = _loop_reset_stamp()
+        if reset_at:
+            _loop_forget(lambda h: h["t"] < reset_at)
         same = [h for h in _loop_hist if h["exact"] == exact and now - h["t"] < LOOP_WINDOW]
         if len(same) >= LOOP_EXACT and len({h["fp"] for h in same[-LOOP_EXACT:]}) == 1:
             n = len(same) + 1
             _audit({"tool": tool, "target": target, "loop_guard": "exact", "count": n, "cmd": main[:300]})
             if same[-1]["failed"]:     # a dead end worth remembering; a repeated successful read is just noise
                 _loop_note(target, tool, main, f"{n}-й одинаковый вызов с тем же результатом", same[-1]["sample"])
+            sample = same[-1]["sample"]
+            _loop_forget(lambda h: h["exact"] == exact)      # the guard fired: this call's count starts over
             return (f"REPEATED (loop guard): this exact {tool} call already ran {len(same)} times in the last "
-                    f"{LOOP_WINDOW // 60} min and returned the same result every time:\n{same[-1]['sample'][:600]}\n\n"
+                    f"{LOOP_WINDOW // 60} min and returned the same result every time:\n{sample[:600]}\n\n"
                     "Do not run it again. Use the result you have; change the approach for a stated reason, check your plan "
                     "and the device notes, or ask the operator. If you are waiting for a change, say what you are waiting for "
                     "and ask the operator to tell you when it happened. (Noted in the device notes as an open question.)")
@@ -177,8 +197,10 @@ def loop_guarded(fn):
         if len(fails) >= LOOP_SHAPE_REFUSE:
             _audit({"tool": tool, "target": target, "loop_guard": "shape", "count": len(fails) + 1, "cmd": main[:300]})
             _loop_note(target, tool, main, f"{len(fails)} неудачных однотипных попыток за {LOOP_SHAPE_WINDOW // 60} мин", fails[-1]["sample"])
-            return (f"REFUSED (loop guard): {len(fails)} calls of this kind ({tool} on {target or 'the box'}, differing only in "
-                    f"numbers) failed in the last {LOOP_SHAPE_WINDOW // 60} min. Last result:\n{fails[-1]['sample'][:600]}\n\n"
+            n_fail, sample = len(fails), fails[-1]["sample"]
+            _loop_forget(lambda h: h["shape"] == shape)      # the guard fired: this kind of call starts over
+            return (f"REFUSED (loop guard): {n_fail} calls of this kind ({tool} on {target or 'the box'}, differing only in "
+                    f"numbers) failed in the last {LOOP_SHAPE_WINDOW // 60} min. Last result:\n{sample[:600]}\n\n"
                     "Stop varying parameters. Write down what you tried and what you saw (plan + device notes 'open'), then "
                     "take a different approach for a stated reason or ask the operator.")
         out = await fn(*a, **kw)

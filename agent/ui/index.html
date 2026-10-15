@@ -214,7 +214,7 @@
       <div class="foot" id="foot"></div>
     </aside>
     <main id="main">
-      <div class="chat-head" id="chatHead"><span class="title" id="chatTitle">—</span><span class="pill" id="chatStat" style="display:none"></span><span class="grow"></span><span class="pill" id="busy" style="display:none">думает…</span><span class="pill warn" id="repeatStat" style="display:none" title="Одинаковые вызовы инструментов в этой сессии (тот же инструмент с теми же аргументами)"></span><button type="button" class="sm" id="abort" style="display:none">Стоп</button><button type="button" class="sm" id="stopReport" style="display:none" title="Прервать и попросить агента описать, что он пробовал и что предлагает">Стоп и отчёт</button><button type="button" class="ghost sm" id="exportSession" title="Скачать сессию как Markdown">Экспорт</button></div>
+      <div class="chat-head" id="chatHead"><span class="title" id="chatTitle">—</span><span class="pill" id="chatStat" style="display:none"></span><span class="grow"></span><span class="pill" id="busy" style="display:none">думает…</span><span class="pill warn" id="repeatStat" style="display:none" title="Одинаковые вызовы инструментов после вашего последнего сообщения (тот же инструмент с теми же аргументами); новое сообщение обнуляет счётчик"></span><button type="button" class="sm" id="abort" style="display:none">Стоп</button><button type="button" class="sm" id="stopReport" style="display:none" title="Прервать и попросить агента описать, что он пробовал и что предлагает">Стоп и отчёт</button><button type="button" class="ghost sm" id="exportSession" title="Скачать сессию как Markdown">Экспорт</button></div>
       <div id="log"></div>
       <button id="toBottom" type="button" class="sm" style="display:none">↓ вниз</button>
       <div id="auditView" class="view" style="display:none"></div>
@@ -421,6 +421,13 @@ function renderTool(p, idx) {
   const rc = (p.output || "").match(/^rc=(\d+)/); const rcPill = rc ? `<span class="pill ${rc[1]==="0"?"ok":"dng"} mono">rc=${rc[1]}</span>` : (p.output || "").startsWith("REJECTED") ? `<span class="pill dng">отклонено защитой</span>` : "";
   return `<details class="tool ${cls}" id="tool-${p.callID || idx}"><summary>${icon}<b>${esc(name)}</b>${dev ? `<span class="pill">${esc(dev)}</span>` : ""}<span class="brief mono">${esc(brief)}</span>${rcPill}<span style="color:var(--tx3)">${dur}</span></summary><pre>${esc(p.output || "(нет вывода)")}</pre></details>`;
 }
+// open/closed state of reasoning and tool blocks the operator toggled survives the re-render on every poll
+const detailsState = new Map();
+const detailKey = d => d.dataset.k || d.id || "";
+$("#log").addEventListener("toggle", e => { const d = e.target; if (d.tagName !== "DETAILS") return; const k = detailKey(d); if (k) detailsState.set(k, d.open); }, true);
+function restoreDetails() {   // re-applying a saved state fires "toggle" with the same value, which is harmless
+  $("#log").querySelectorAll("details").forEach(d => { const k = detailKey(d); if (k && detailsState.has(k) && d.open !== detailsState.get(k)) d.open = detailsState.get(k); });
+}
 function renderMessages(d) {
   lastData = d;
   const calls = {};
@@ -433,9 +440,9 @@ function renderMessages(d) {
       const imgs = m.parts.filter(p => p.type === "image").map(p => `<a href="${esc(p.src)}" target="_blank" rel="noopener"><img src="${esc(p.src)}" alt="${esc(p.name)}" loading="lazy"></a>`).join("");
       return `<div class="msg user"><div class="who"><span class="av">${ICON.user}</span><b>Оператор</b> ${time}</div><div class="content">${imgs ? `<div class="thumbs">${imgs}</div>` : ""}<div class="utext">${esc(text)}</div></div></div>`;
     }
-    const parts = m.parts.map(p => {
+    const parts = m.parts.map((p, pi) => {
       if (p.type === "text") { if (/```mermaid/.test(p.text)) hasMermaid = true; return `<div class="agent">${fmt(p.text)}</div>`; }
-      if (p.type === "reasoning") return p.text ? `<details class="reason"><summary>ход мыслей ›</summary><pre>${esc(p.text)}</pre></details>` : "";
+      if (p.type === "reasoning") return p.text ? `<details class="reason" data-k="r-${esc(m.id)}-${pi}"><summary>ход мыслей ›</summary><pre>${esc(p.text)}</pre></details>` : "";
       if (p.type === "tool") { const n = (p.tool || "").replace(/^target-host_/, ""); if (TAB_FOR[n]) openTabs.add(TAB_FOR[n]); return renderTool(p, i++); }
       return "";
     }).join("");
@@ -444,7 +451,7 @@ function renderMessages(d) {
     return `<div class="msg"><div class="who"><span class="av">${ICON.bot}</span><b>Агент</b> ${time} ${prof}</div><div class="content">${parts}${err}</div></div>`;
   }).join("") + d.pending.map(p => renderPerm(p, calls)).join("") + (d.questions || []).map(renderQuestion).join("");
   if (html !== lastHTML) {
-    $("#log").innerHTML = html; lastHTML = html;
+    $("#log").innerHTML = html; lastHTML = html; restoreDetails();
     if (stickBottom) scrollToBottom();
     if (hasMermaid) tabs.diagram.fromSession(d);
   }
@@ -454,8 +461,9 @@ function renderMessages(d) {
   const nTools = d.messages.reduce((a, m) => a + m.parts.filter(p => p.type === "tool").length, 0);
   const nChange = d.messages.reduce((a, m) => a + m.parts.filter(p => p.type === "tool" && toolClass((p.tool||"").replace(/^target-host_/, "")) !== "read").length, 0);
   $("#chatStat").style.display = nTools ? "" : "none"; $("#chatStat").textContent = `${nTools} шагов · ${nChange} изменений`;
-  const seen = {}; let reps = 0, guard = 0;
-  d.messages.forEach(m => m.parts.forEach(p => { if (p.type !== "tool") return; const k = p.tool + JSON.stringify(p.input || {}); if (seen[k]) reps++; seen[k] = (seen[k] || 0) + 1; if (/^(REPEATED|REFUSED) \(loop guard\)/.test(p.output || "")) guard++; }));
+  const seen = {}; let reps = 0, guard = 0;   // counted since the operator's last message (that resets the server guard too)
+  const lastUser = d.messages.map(m => m.role).lastIndexOf("user");
+  d.messages.slice(Math.max(0, lastUser)).forEach(m => m.parts.forEach(p => { if (p.type !== "tool") return; const k = p.tool + JSON.stringify(p.input || {}); if (seen[k]) reps++; seen[k] = (seen[k] || 0) + 1; if (/^(REPEATED|REFUSED) \(loop guard\)/.test(p.output || "")) guard++; }));
   $("#repeatStat").style.display = reps ? "" : "none"; $("#repeatStat").textContent = `повторов: ${reps}${guard ? ` · защита ×${guard}` : ""}`;
   $("#repeatStat").className = "pill " + (guard || reps >= 5 ? "dng" : "warn");
   $("#stopReport").style.display = d.busy ? "" : "none";
@@ -486,7 +494,7 @@ async function poll() {
   catch (e) { $("#log").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 function selectSession(id) {
-  sid = id; lastHTML = ""; lastData = null; stickBottom = true; busySince = null; $("#log").innerHTML = ""; staged.clear(); renderStaged(); if (activeTab === "media") tabs.media.load();
+  sid = id; lastHTML = ""; lastData = null; stickBottom = true; busySince = null; $("#log").innerHTML = ""; detailsState.clear(); staged.clear(); renderStaged(); if (activeTab === "media") tabs.media.load();
   document.querySelectorAll("#sessions a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#"+id));
   showView("chat"); poll(); if (stateCache) renderSessions(stateCache);
 }
@@ -563,7 +571,8 @@ tabs.console = { title: "Консоль", ops: [],
     const body = b.parentElement; body.scrollTop = body.scrollHeight; } };
 // Устройство: passport + topology + scan
 tabs.device = { title: "Устройство", cur: null, facts: {}, scan: null, sub: "passport",
-  mount(h) { h.innerHTML = `<div class="tabbar"><div class="pill" style="padding:0;overflow:hidden;gap:0"><button type="button" class="ghost sm" data-sub="passport" style="min-height:24px;border-radius:0">Паспорт</button><button type="button" class="ghost sm" data-sub="topology" style="min-height:24px;border-radius:0">Топология</button><button type="button" class="ghost sm" data-sub="scan" style="min-height:24px;border-radius:0">Окружение</button><button type="button" class="ghost sm" data-sub="notes" style="min-height:24px;border-radius:0" title="Что агент записал об устройстве для следующих сессий">Заметки</button></div><button type="button" class="ghost sm" id="devConnect" title="Поставить ключ агента на Linux-хост по логину и паролю">+ Подключить</button><span class="grow"></span><span class="pill" id="devStamp"></span><button type="button" class="sm" id="devRefresh">Обновить</button><a id="devReport" href="#" download><button type="button" class="ghost sm">Отчёт</button></a></div><div class="tabbody" id="devBody"></div>`;
+  mount(h) { this.sub = "passport";   // opening the tab always lands on the passport
+    h.innerHTML = `<div class="tabbar"><div class="pill" style="padding:0;overflow:hidden;gap:0"><button type="button" class="ghost sm" data-sub="passport" style="min-height:24px;border-radius:0">Паспорт</button><button type="button" class="ghost sm" data-sub="topology" style="min-height:24px;border-radius:0">Топология</button><button type="button" class="ghost sm" data-sub="scan" style="min-height:24px;border-radius:0">Окружение</button><button type="button" class="ghost sm" data-sub="notes" style="min-height:24px;border-radius:0" title="Что агент записал об устройстве для следующих сессий">Заметки</button></div><button type="button" class="ghost sm" id="devConnect" title="Поставить ключ агента на Linux-хост по логину и паролю">+ Подключить</button><span class="grow"></span><span class="pill" id="devStamp"></span><button type="button" class="sm" id="devRefresh">Обновить</button><a id="devReport" href="#" download><button type="button" class="ghost sm">Отчёт</button></a></div><div class="tabbody" id="devBody"></div>`;
     h.querySelectorAll("button[data-sub]").forEach(b => b.onclick = () => { this.sub = b.dataset.sub; this.draw(); }); $("#devConnect").onclick = () => { this.sub = "connect"; this.draw(); }; $("#devRefresh").onclick = () => this.sub === "scan" ? this.doScan() : this.load(this.cur || targetName, true);
     if (!this.cur && targetName) this.load(targetName); else this.draw(); },
   async load(name, force) { this.cur = name; if (!name) return this.draw(); $("#devReport").href = `/api/device/${encodeURIComponent(name)}/report`;
@@ -643,12 +652,16 @@ tabs.diagram = { title: "Схема", src: "", ready: false,
   async ensure() { if (this.ready) return true; if (window.mermaid) { this.ready = true; return true; } let f = {}; try { f = await api("/api/features"); } catch {} if (!f.mermaid) return false;
     await new Promise((res, rej) => { const s = document.createElement("script"); s.src = "/static/vendor/mermaid.min.js"; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
     this.ready = true; return true; },
-  async render() { const out = $("#diaOut"); if (!out) return; if (!this.src.trim()) return; if (!(await this.ensure())) { out.innerHTML = `<div class="empty">Библиотека mermaid не установлена на устройстве: <span class="mono">install/fetch-ui-assets.sh</span> (нужен интернет один раз). Исходник всё равно сохраняется и экспортируется.</div>`; return; }
+  // renders are queued: the tab mount, the button and every chat refresh may ask at once, and mermaid's temp nodes of
+  // one render must not be swept away by another (that was "Cannot read properties of null (reading 'getAttribute')")
+  render() { this._q = (this._q || Promise.resolve()).then(() => this._render()).catch(() => {}); return this._q; },
+  async _render() { const out = $("#diaOut"); if (!out) return; if (!this.src.trim()) return; if (!(await this.ensure())) { out.innerHTML = `<div class="empty">Библиотека mermaid не установлена на устройстве: <span class="mono">install/fetch-ui-assets.sh</span> (нужен интернет один раз). Исходник всё равно сохраняется и экспортируется.</div>`; return; }
     try { mermaid.initialize({ startOnLoad: false, theme: document.documentElement.dataset.theme === "dark" ? "dark" : "neutral", securityLevel: "strict", suppressErrorRendering: true });
       await mermaid.parse(this.src);                       // syntax errors stop here, nothing touches the DOM
-      const id = "dia" + Date.now(); const { svg } = await mermaid.render(id, this.src); out.innerHTML = svg; $("#diaStat").textContent = (this.src.match(/-->|---|==>|-\.-/g) || []).length + " связей"; }
-    catch (e) { out.innerHTML = `<div class="err">Ошибка схемы: ${esc(e.message || e)}</div>`; }
-    document.querySelectorAll('body > [id^="dia"], body > [id^="ddia"]').forEach(n => n.remove()); },
+      const id = "mmd" + Date.now() + Math.random().toString(36).slice(2, 6); this._id = id;
+      try { const { svg } = await mermaid.render(id, this.src); out.innerHTML = svg; $("#diaStat").textContent = (this.src.match(/-->|---|==>|-\.-/g) || []).length + " связей"; }
+      finally { ["#" + id, "#d" + id].forEach(sel => document.querySelectorAll(`body > ${sel}`).forEach(n => n.remove())); } }
+    catch (e) { out.innerHTML = `<div class="err">Ошибка схемы: ${esc(e.message || e)}</div>`; } },
   download(kind) { const blob = kind === "svg" ? new Blob([$("#diaOut").innerHTML], {type: "image/svg+xml"}) : new Blob([this.src], {type: "text/plain"}); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `diagram-${new Date().toISOString().slice(0,16).replace(/[:T]/g, "-")}.${kind}`; a.click(); } };
 // Библиотека: offline manuals / datasheets / playbooks / papers; same index as the agent's library_search
 const KIND_RU = { "": "все", manual: "мануалы", datasheet: "даташиты", playbook: "плейбуки", paper: "статьи", note: "заметки" };

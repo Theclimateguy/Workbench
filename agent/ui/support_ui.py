@@ -53,6 +53,7 @@ STACK_DIR = Path(os.environ.get("SUPPORT_STACK_DIR", "/opt/support-stack"))
 LIBRARY_DIR = Path(os.environ.get("LIBRARY_DIR", "/opt/library"))
 MEDIA_DIR = Path(os.environ.get("SUPPORT_MEDIA_DIR", "/var/lib/support/media"))
 NOTES_DIR = Path(os.environ.get("SUPPORT_NOTES_DIR", str(Path(WORKSPACE) / "docs" / "devices")))
+LOOP_RESET = Path(os.environ.get("SUPPORT_LOOP_RESET", "/var/lib/support/state/loop-reset"))
 VISION_MODELS = {"fast"}            # profiles whose model sees images (opencode.json: modalities)
 
 
@@ -393,6 +394,11 @@ async def prompt(sid: str, body: dict):
         payload["parts"].append({"type": "file", "mime": mime, "filename": f"media/{sid}/{name}",
                                  "url": f"data:{mime};base64," + base64.b64encode(f.read_bytes()).decode()})
     await oc("POST", f"/session/{sid}/prompt_async", json=payload)
+    try:   # the operator stepped in: the loop guard in target-host starts counting afresh
+        LOOP_RESET.parent.mkdir(parents=True, exist_ok=True)
+        LOOP_RESET.touch()
+    except OSError:
+        pass
     return {"ok": True}
 
 
