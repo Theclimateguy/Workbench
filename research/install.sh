@@ -35,6 +35,10 @@ SEARXNG_SECRET=$(openssl rand -hex 32)
 GITHUB_TOKEN=
 # Optional: Zenodo personal token
 ZENODO_TOKEN=
+# Optional: OpenAlex key (free, openalex.org/settings/api; without one a small daily budget is shared per IP)
+OPENALEX_API_KEY=
+# Optional: contact e-mail sent to OpenAlex/Crossref (polite pool)
+OPENALEX_MAILTO=
 EOF
   sudo chmod 600 /etc/research/research.env
   echo "    web password (user 'research'): $PW"

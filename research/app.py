@@ -5,6 +5,7 @@
                                  ├─ vLLM OpenAI API 127.0.0.1:8000 (one profile at a time: fast | deep | nemotron,
                                  │    switched here through `systemctl start llm@<profile>` of the Workbench stack)
                                  └─ MCP stdio servers: tools/web.py (SearXNG), tools/papers.py (arXiv, Zenodo),
+                                                       tools/scholar.py (DOIs, citations: OpenAlex, Crossref),
                                                        tools/github.py (GitHub, read-only),
                                                        tools/machine.py (workspace: shell, jobs, files, downloads;
                                                        runs as the unprivileged user RESEARCH_RUN_AS)
@@ -21,7 +22,7 @@ What the assistant reads (pages, papers, records, files, downloads) goes to the 
 Run:  uvicorn app:app --host 127.0.0.1 --port 8090
 Env:  LLM_URL (http://127.0.0.1:8000), RESEARCH_DATA (./data), RESEARCH_PASSWORD (basic auth for non-local
       clients; user "research"), STACK_DIR (/opt/support-stack: LLM profiles), SEARXNG_URL, GITHUB_TOKEN,
-      ZENODO_TOKEN (passed through to the tool servers), RESEARCH_RUN_AS (user for the machine tools, via sudo;
+      ZENODO_TOKEN, OPENALEX_API_KEY, OPENALEX_MAILTO (passed through to the tool servers), RESEARCH_RUN_AS (user for the machine tools, via sudo;
       empty = this process's user, for development), RESEARCH_WORKSPACE (served read-only as /ws/...)
 """
 from __future__ import annotations
@@ -58,7 +59,7 @@ LLM_URL = os.environ.get("LLM_URL", "http://127.0.0.1:8000").rstrip("/")
 DATA = Path(os.environ.get("RESEARCH_DATA", HERE / "data"))
 PASSWORD = os.environ.get("RESEARCH_PASSWORD", "")
 STACK_DIR = Path(os.environ.get("STACK_DIR", "/opt/support-stack"))
-TOOL_SERVERS = ["web", "papers", "github"]
+TOOL_SERVERS = ["web", "papers", "scholar", "github"]
 RUN_AS = os.environ.get("RESEARCH_RUN_AS", "")
 WORKSPACE = Path(os.environ.get("RESEARCH_WORKSPACE", DATA / "workspace"))
 # machine tools (tools/machine.py) and their per-call timeouts; the rest of the tools get TOOL_TIMEOUT
@@ -83,12 +84,16 @@ PROFILES = {
 }
 
 SYSTEM = """You are a research assistant running fully locally on the user's own machine. Today is {today}.
-Tools: web search and page reading, arXiv and Zenodo (papers, datasets, software), GitHub (read-only), the user's uploaded files,
+Tools: web search and page reading, journal literature by DOI (OpenAlex/Crossref: search, references, citing works,
+open-access copies), arXiv and Zenodo (preprints, datasets, software), GitHub (read-only), the user's uploaded files,
 and (when present) the offline library of the user's own documents (library_search / library_read, cite as [doc:ID p.N]).
 - Use tools whenever facts may be recent, specific or checkable; do not invent papers, numbers, URLs or quotes.
-- For literature questions search arXiv/Zenodo first, open the most relevant items before summarising.
-- Search results are only snippets. Open what you rely on (fetch_url, arxiv_paper, zenodo_record, gh_read,
-  library_read) before stating facts from it.
+- For literature questions use paper_search (journals, all fields) and arxiv_search (preprints); open the most
+  relevant items with doi_lookup / arxiv_paper before summarising. Follow the citation graph with references (what
+  a paper builds on) and cited_by (later work; sort='date' for the newest). For the full text of a journal paper,
+  fetch_url its open-access PDF from doi_lookup; when it is closed, say you only read the abstract.
+- Search results are only snippets. Open what you rely on (fetch_url, doi_lookup, arxiv_paper, zenodo_record,
+  gh_read, library_read) before stating facts from it.
 - Everything you open is saved as a numbered source of this chat ("[saved as source S3: …]"). Cite it right after the
   claim as [S3] (the chat turns it into a link); cite anything else as [title](url). Say plainly when something
   was not found or could not be verified.

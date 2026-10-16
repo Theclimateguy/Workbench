@@ -1,7 +1,7 @@
 """Source ledger of the research chat (used by app.py, not an MCP server): what the assistant actually read.
 
 Search results are snippets and are not recorded. Every successful result of a reading tool (fetch_url, arxiv_paper,
-zenodo_record, gh_repo, gh_read, library_read, download) becomes source S<n> of its chat: reference, URL, title,
+doi_lookup, zenodo_record, gh_repo, gh_read, library_read, download) becomes source S<n> of its chat: reference, URL, title,
 first and last fetch time, the parts that were read and a sha256 of the text read (of the file, for downloads) as
 its version. Paged documents keep their parts in document coordinates (the `offset` of the tool that read them),
 so source_read(n, offset) and the tool itself agree, and unread stretches come with the exact call that opens them.
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS sources (id INTEGER PRIMARY KEY, chat_id TEXT, n INTE
 CREATE TABLE IF NOT EXISTS source_parts (source_id INTEGER, loc TEXT, pos INTEGER, paged INTEGER, text TEXT,
     fetched REAL, PRIMARY KEY(source_id, loc));
 """
-READ_TOOLS = {"fetch_url", "arxiv_paper", "zenodo_record", "gh_repo", "gh_read", "library_read", "download"}
+READ_TOOLS = {"fetch_url", "arxiv_paper", "doi_lookup", "zenodo_record", "gh_repo", "gh_read", "library_read", "download"}
 MORE = re.compile(r"\n\n\[\.\.\. (\d+) more chars; call again with offset=(\d+)\]\s*$")  # common.page()
 ARXIV_ID = re.compile(r"(\d{4}\.\d{4,5}(v\d+)?|[a-z\-]+(\.[A-Z]{2})?/\d{7}(v\d+)?)")
 
@@ -95,6 +95,13 @@ def parse(name: str, args: dict, result: str) -> dict | None:
             body, src["total"] = _window(win, 0)
             parts.append(_paged(0, body))
         return {**src, "parts": parts}
+    if name == "doi_lookup":
+        m = re.match(r"\[(doi:(\S+)|openalex:(W\d+))\]\s*(.*)", result)
+        if not m:
+            return None                                     # not found
+        url = f"https://doi.org/{m.group(2)}" if m.group(2) else f"https://openalex.org/{m.group(3)}"
+        return {"kind": "paper", "ref": m.group(1), "url": url, "title": m.group(4)[:160], "total": None,
+                "reopen": "", "parts": [_whole("record", result)]}
     if name == "zenodo_record":
         m = re.match(r"\[zenodo:(\d+)\]\s*(.*)", result)
         if not m:

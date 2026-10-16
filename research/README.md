@@ -10,19 +10,30 @@ StarCraft-style skins.
 browser ── :8090 ── app.py (FastAPI · SQLite history · uploads) ── vLLM 127.0.0.1:8000
                       └─ MCP (stdio): tools/web.py     web_search (local SearXNG :8888), fetch_url (HTML/PDF → text)
                                       tools/papers.py  arxiv_search, arxiv_paper (+ full text), zenodo_search, zenodo_record
+                                      tools/scholar.py paper_search, doi_lookup (+ OA PDF link), references, cited_by
+                                                       (OpenAlex; Crossref fallback)
                                       tools/github.py  gh_search_repos/_code/_issues, gh_repo, gh_read  (read-only)
                                       tools/machine.py run, job_start/_status/_stop, list_files, read_file,
                                                        write_file, edit_file, download   (as user `researcher`)
 ```
 
 **Sources.** Search results are snippets; what the assistant actually *reads* (`fetch_url`, `arxiv_paper`,
-`zenodo_record`, `gh_repo`, `gh_read`, `library_read`, `download`) is saved per chat as source **S1, S2, …**
+`doi_lookup`, `zenodo_record`, `gh_repo`, `gh_read`, `library_read`, `download`) is saved per chat as source **S1, S2, …**
 (`tools/sources.py`, tables `sources` / `source_parts` in `chats.db`): reference, URL, title, fetch times, which
 parts were read (in the tool's own `offset` coordinates, or PDF pages) and a sha256 of the text read (of the file,
 for downloads). The model cites `[S3]` (the chat links it), sees a one-line summary of every source with what it has
 and has *not* read, and re-reads with `source_read(n, offset)` / `sources_list` once older tool output has been trimmed
 from the prompt; an unread stretch comes back with the exact call that opens it. The **❞** button lists the
 sources; the Markdown export appends them.
+
+**Journal literature.** `tools/scholar.py` covers what arXiv does not: anything with a DOI. `paper_search`
+searches OpenAlex works by title/abstract keywords (year range, `sort` relevance | cited | date, `open_access`
+only); `doi_lookup` gives title, authors, venue, abstract, counts, open-access status and the best free PDF or
+landing page (read it with `fetch_url`) and is recorded as source `doi:<doi>`; `references` / `cited_by` walk the
+citation graph (most cited first, or newest first for `cited_by`), paged with `page`. Crossref fills in when
+OpenAlex lacks a DOI, an abstract or a reference list, or is over its budget. OpenAlex needs no key, but without one
+all requests from the box's IP share a free budget of about $0.10/day (a lookup ≈ $0.0001, a search ≈ $0.001,
+so roughly 100 searches); a free personal key (`OPENALEX_API_KEY`, openalex.org/settings/api) gives its own $1/day.
 
 **Tool loop.** Each MCP server runs in its own supervisor task: a crashed or hung server is restarted (read-only
 tools are retried once; machine tools are not, they may have side effects). Arguments are checked before a call
@@ -80,8 +91,9 @@ prompt; the model reads the rest with `read_upload`. Images are not supported.
 ```
 
 From the Mac: `make deploy HOST=<ssh target>` (in this folder). First install creates `/etc/research/research.env` (bind address,
-port, web password for non-local browsers — user `research`, optional `GITHUB_TOKEN` / `ZENODO_TOKEN`) and prints the
-password once. After editing it: `sudo systemctl restart research-chat`.
+port, web password for non-local browsers — user `research`, optional `GITHUB_TOKEN` / `ZENODO_TOKEN` /
+`OPENALEX_API_KEY` / `OPENALEX_MAILTO`) and prints the password once; on an existing install add new keys by hand.
+After editing it: `sudo systemctl restart research-chat`.
 
 Services: `research-chat` (uvicorn, `0.0.0.0:8090`), `research-search` (SearXNG container `research-searxng`,
 `127.0.0.1:8888`). Logs: `journalctl -u research-chat`, `docker logs research-searxng`.
