@@ -18,10 +18,11 @@ sudo install -d -m 755 /etc/support
 sudo install -d -o "$RUN_USER" -g "$RUN_USER" /opt/library /opt/library/docs /var/lib/support/media /var/lib/support/state
 
 log "software -> $SUPPORT_DIR, $STACK_DIR"
-# Never clobber per-device state: targets/, keys/, workspace/docs/ (operator's documentation).
+# Never clobber per-device state: targets/, keys/, workspace/docs/ (operator's documentation and device notes),
+# pydeps-offline/ (Python wheels carried in by hand for a box without internet, see DEPLOY.md).
 rsync -a --delete \
   --exclude 'targets/' --exclude 'keys/' --exclude 'workspace/docs/' --exclude 'ui-assets/' --exclude 'manual/' --exclude 'venv/' --exclude '__pycache__/' \
-  --exclude 'tests/' --exclude 'workbench/' \
+  --exclude 'tests/' --exclude 'workbench/' --exclude 'pydeps-offline/' \
   "$REPO/agent/" "$SUPPORT_DIR/"
 rsync -a "$REPO/agent/workspace/docs/" "$SUPPORT_DIR/workspace/docs/" --ignore-existing
 rsync -a "$REPO/tests/" "$SUPPORT_DIR/tests/"
