@@ -35,7 +35,7 @@ the sidebar browses the workspace; the **⌬ Machine** toggle turns these tools 
 unload `fast` | `deep` | `nemotron`; switching stops the running profile, loads take 5–10 min; also used by the
 Workbench agent) · reasoning depth (off/low/med/high → `reasoning_effort` for gpt-oss, `enable_thinking` for
 Qwen/Nemotron) · edit last message, regenerate, copy · context meter · standing orders (custom instructions) ·
-KaTeX math · Terran HUD theme, offline fonts · desktop launcher `~/Desktop/research.desktop`.
+KaTeX math · two themes, switched with ◐ in the sidebar (Terran HUD; Zerg hive mind — creep, Overmind/Abathur), offline fonts · desktop launcher `~/Desktop/research.desktop`.
 
 **Privacy.** Chats (`/var/lib/research/chats.db`) and uploaded files (`/var/lib/research/uploads/`) stay on the box and
 go only to the local LLM. What leaves the box: search queries and paper/repo/page lookups the model makes. The
