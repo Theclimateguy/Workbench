@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# runner-net up|down|status — outbound network fence for the machine-tools user (default: researcher).
+# Its processes may reach the internet, the local DNS stub and the LLM API (127.0.0.1:8000) and nothing else on
+# this box or the local networks: not the chat itself (local clients skip its password), not the Workbench UI,
+# OpenCode, the dashboard, SSH, docker containers, the LAN or the VPN. Run as root (research-runner-net.service).
+set -euo pipefail
+U=${RUNNER_USER:-researcher}
+C=RESEARCH_RUNNER
+
+down() {
+  for ipt in iptables ip6tables; do
+    while $ipt -D OUTPUT -m owner --uid-owner "$U" -j $C 2>/dev/null; do :; done
+    $ipt -F $C 2>/dev/null || true
+    $ipt -X $C 2>/dev/null || true
+  done
+}
+
+case "${1:-up}" in
+up)
+  id "$U" >/dev/null
+  down
+  for ipt in iptables ip6tables; do
+    $ipt -N $C
+    $ipt -I OUTPUT 1 -m owner --uid-owner "$U" -j $C
+  done
+  iptables -A $C -o lo -d 127.0.0.53 -p udp --dport 53 -j RETURN
+  iptables -A $C -o lo -d 127.0.0.53 -p tcp --dport 53 -j RETURN
+  iptables -A $C -o lo -d 127.0.0.1 -p tcp --dport 8000 -j RETURN
+  iptables -A $C -m addrtype --dst-type LOCAL -j REJECT
+  for net in 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10 224.0.0.0/4; do
+    iptables -A $C -d $net -j REJECT
+  done
+  ip6tables -A $C -m addrtype --dst-type LOCAL -j REJECT
+  for net in ::1/128 fc00::/7 fe80::/10 ff00::/8; do
+    ip6tables -A $C -d $net -j REJECT
+  done
+  ;;
+down) down ;;
+status) iptables -S $C; ip6tables -S $C ;;
+*) echo "usage: $0 up|down|status" >&2; exit 2 ;;
+esac

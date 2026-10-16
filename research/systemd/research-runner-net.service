@@ -1,0 +1,13 @@
+[Unit]
+Description=Research chat: network fence for the machine-tools user (internet, DNS, LLM API only)
+After=network-pre.target docker.service
+Before=research-chat.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/research/bin/runner-net up
+ExecStop=/opt/research/bin/runner-net down
+
+[Install]
+WantedBy=multi-user.target

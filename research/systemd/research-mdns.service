@@ -1,0 +1,13 @@
+[Unit]
+Description=mDNS name research.local for the research chat (own host name -> own browser icon)
+After=avahi-daemon.service network-online.target
+Wants=avahi-daemon.service
+
+[Service]
+Type=simple
+ExecStart=/opt/research/bin/mdns-alias research.local
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
