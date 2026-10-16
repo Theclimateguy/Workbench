@@ -1,18 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <defs>
     <radialGradient id="flesh" cx="50%" cy="45%" r="65%">
-      <stop offset="0" stop-color="#4a1640"/>
-      <stop offset=".6" stop-color="#220a1c"/>
+      <stop offset="0" stop-color="#2a0d22"/>
+      <stop offset=".6" stop-color="#130610"/>
       <stop offset="1" stop-color="#0b0509"/>
     </radialGradient>
     <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#c06ad8"/>
-      <stop offset="1" stop-color="#4c1a52"/>
+      <stop offset="0" stop-color="#6e4256"/>
+      <stop offset="1" stop-color="#21101a"/>
     </linearGradient>
     <radialGradient id="iris" cx="50%" cy="50%" r="50%">
-      <stop offset="0" stop-color="#f4ffb0"/>
-      <stop offset=".45" stop-color="#b6ff3c"/>
-      <stop offset="1" stop-color="#3f7a05"/>
+      <stop offset="0" stop-color="#ffe2a8"/>
+      <stop offset=".45" stop-color="#f09430"/>
+      <stop offset="1" stop-color="#7a3100"/>
     </radialGradient>
     <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
       <feGaussianBlur stdDeviation="3.2" result="b"/>
@@ -21,13 +21,13 @@
   </defs>
   <rect width="128" height="128" rx="26" fill="url(#flesh)"/>
   <!-- creep veins -->
-  <g fill="none" stroke="#7a2a5c" stroke-width="1.6" stroke-linecap="round" opacity=".7">
+  <g fill="none" stroke="#5a1c34" stroke-width="1.6" stroke-linecap="round" opacity=".7">
     <path d="M8 98c14-6 22-2 30 6s18 12 26 8"/>
     <path d="M120 30c-12 6-18 2-26-4s-16-8-24-2"/>
     <path d="M16 20c10 10 12 20 8 30"/>
     <path d="M112 108c-8-8-18-10-28-6"/>
   </g>
-  <g fill="#c06ad8" stroke="#1a0614" stroke-width="1.5" stroke-linejoin="round">
+  <g fill="#a89070" stroke="#1a0614" stroke-width="1.5" stroke-linejoin="round">
     <path d="M80 22l9-4-5 9z"/><path d="M85 36l10-1-8 7z"/>
     <path d="M80 22l9-4-5 9z" transform="rotate(120 64 66)"/><path d="M85 36l10-1-8 7z" transform="rotate(120 64 66)"/>
     <path d="M80 22l9-4-5 9z" transform="rotate(240 64 66)"/><path d="M85 36l10-1-8 7z" transform="rotate(240 64 66)"/>
@@ -38,7 +38,7 @@
     <path d="M58 6C80 16 88 34 78 54l-8 6-9-5c8-13 9-28-3-49z" transform="rotate(120 64 66)"/>
     <path d="M58 6C80 16 88 34 78 54l-8 6-9-5c8-13 9-28-3-49z" transform="rotate(240 64 66)"/>
   </g>
-  <g fill="none" stroke="#e7a6ff" stroke-width="1.4" stroke-linecap="round" opacity=".55">
+  <g fill="none" stroke="#c79aa8" stroke-width="1.4" stroke-linecap="round" opacity=".55">
     <path d="M64 16c9 9 12 20 9 34"/>
     <path d="M64 16c9 9 12 20 9 34" transform="rotate(120 64 66)"/>
     <path d="M64 16c9 9 12 20 9 34" transform="rotate(240 64 66)"/>
