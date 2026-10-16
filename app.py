@@ -350,7 +350,7 @@ def favicon():
 def manifest():
     return JSONResponse({"name": "Research", "short_name": "Research", "start_url": "/", "display": "standalone",
                          "background_color": "#05080c", "theme_color": "#05080c",
-                         "icons": [{"src": f"/static/icons/icon-{s}.png?v=3", "sizes": f"{s}x{s}", "type": "image/png"}
+                         "icons": [{"src": f"/static/icons/icon-{s}.png?v=4", "sizes": f"{s}x{s}", "type": "image/png"}
                                    for s in (192, 512)]})
 
 

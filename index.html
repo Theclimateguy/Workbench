@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#05080c">
 <title>Research</title>
-<link rel="icon" href="/favicon.ico?v=3" sizes="any">
-<link rel="icon" href="/static/icons/icon-32.png?v=3" type="image/png" sizes="32x32">
-<link rel="icon" href="/static/icons/icon-64.png?v=3" type="image/png" sizes="64x64">
-<link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=3">
+<link rel="icon" href="/favicon.ico?v=4" sizes="any">
+<link rel="icon" href="/static/icons/icon-32.png?v=4" type="image/png" sizes="32x32">
+<link rel="icon" href="/static/icons/icon-64.png?v=4" type="image/png" sizes="64x64">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=4">
 <link rel="manifest" href="/manifest.json">
-<link rel="stylesheet" href="/static/fonts/fonts.css?v=3">
-<link rel="stylesheet" href="/static/fonts/themes.css?v=3">
+<link rel="stylesheet" href="/static/fonts/fonts.css?v=4">
+<link rel="stylesheet" href="/static/fonts/themes.css?v=4">
 <link rel="stylesheet" href="/static/katex/katex.min.css">
 <script src="/static/marked.umd.js"></script>
 <script src="/static/katex/katex.min.js"></script>
@@ -294,11 +294,10 @@ details.step .body { white-space: pre-wrap; margin: 6px 0 8px 14px; padding: 8px
 :root[data-theme="zerg"] .btn { border-radius: 999px; letter-spacing: .06em; font-size: 13px; font-weight: 700; }
 :root[data-theme="zerg"] .btn.bevel { border-radius: 14px 20px 12px 22px / 18px 12px 22px 14px; }
 :root[data-theme="zerg"] .btn:hover { box-shadow: inset 0 0 0 1px var(--cyan), 0 0 16px rgba(var(--acc-rgb), .28); }
-:root[data-theme="zerg"] .logo img { border-radius: 50% 46% 52% 44%; animation: pulse-glow 5s ease-in-out infinite; }
+:root[data-theme="zerg"] .logo img { border-radius: 10px; animation: pulse-glow 5s ease-in-out infinite; }
 :root[data-theme="zerg"] .logo b { font-size: 21px; letter-spacing: .1em; text-shadow: 0 0 12px rgba(var(--acc-rgb), .55); }
 :root[data-theme="zerg"] #title { font-size: 16px; letter-spacing: .06em; }
-:root[data-theme="zerg"] .empty img { border-radius: 50% 44% 54% 46% / 48% 54% 46% 52%;
-  animation: pulse-glow 5s ease-in-out infinite, wobble 11s ease-in-out infinite; }
+:root[data-theme="zerg"] .empty img { border-radius: 18px; animation: pulse-glow 5s ease-in-out infinite; }
 @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 0 1px var(--steel), 0 0 36px rgba(178, 90, 214, .35); }
   50% { box-shadow: 0 0 0 1px var(--steel), 0 0 60px rgba(240, 148, 48, .35); } }
 @keyframes wobble { 0%, 100% { border-radius: 50% 44% 54% 46% / 48% 54% 46% 52%; } 50% { border-radius: 44% 54% 46% 52% / 54% 46% 52% 48%; } }
@@ -334,7 +333,7 @@ details.step .body { white-space: pre-wrap; margin: 6px 0 8px 14px; padding: 8px
 <body>
 <div id="app">
   <aside id="side">
-    <div class="logo"><img id="logoImg" src="/static/icons/icon-192.png" alt=""><div><b id="brand">RESEARCH</b><small id="brandSub">science vessel · local</small></div></div>
+    <div class="logo"><img id="logoImg" src="/static/icons/icon-192.png?v=4" alt=""><div><b id="brand">RESEARCH</b><small id="brandSub">science vessel · local</small></div></div>
     <div class="ops">
       <button id="new" class="btn bevel">＋ New mission</button>
       <input id="q" placeholder="search log…" autocomplete="off">
@@ -428,12 +427,12 @@ const TOOL_LABEL = {
 const label = (n, a) => (TOOL_LABEL[n] ? TOOL_LABEL[n](a || {}) : n);
 const THINK = ['off', 'low', 'medium', 'high'];
 const THEMES = {
-  terran: { brand: 'RESEARCH', sub: 'science vessel · local', icon: '/static/icons/icon-192.png', hero: '/static/icons/icon-512.png',
+  terran: { brand: 'RESEARCH', sub: 'science vessel · local', icon: '/static/icons/icon-192.png?v=4', hero: '/static/icons/icon-512.png?v=4', fav: '',
     newChat: '＋ New mission', untitled: 'New mission', search: 'search log…', awaiting: 'AWAITING ORDERS',
     input: 'AWAITING ORDERS, COMMANDER…', user: 'Commander', bot: 'Adjutant', offline: 'reactor offline', loading: 'spinning up…',
     banner: 'REACTOR SPINNING UP', hint: 'local reactor · chats and files never leave this machine', orders: 'STANDING ORDERS',
     ws: 'WORKSPACE', drop: 'DROP FILES TO UPLOAD', color: '#05080c' },
-  zerg: { brand: 'Hive Mind', sub: 'evolution chamber · local', icon: '/static/icons/zerg.svg', hero: '/static/icons/zerg.svg',
+  zerg: { brand: 'Hive Mind', sub: 'evolution chamber · local', icon: '/static/icons/zerg-192.png?v=4', hero: '/static/icons/zerg-512.png?v=4', fav: '/static/icons/zerg-48.png?v=4',
     newChat: '＋ Spawn larva', untitled: 'New larva', search: 'search the swarm memory…', awaiting: 'The Swarm Awaits',
     input: 'SPEAK, OVERMIND…', user: 'Overmind', bot: 'Abathur', offline: 'hive dormant', loading: 'morphing…',
     banner: 'CHRYSALIS MORPHING', hint: 'local hive · thoughts and files never leave this hive', orders: "Overmind's Will",
@@ -766,6 +765,10 @@ function applyTheme() {
   const t = T();
   document.documentElement.dataset.theme = theme;
   document.querySelector('meta[name=theme-color]').content = t.color;
+  document.querySelectorAll('link[rel~="icon"]').forEach(l => {   // tab icon follows the theme
+    l.dataset.orig = l.dataset.orig || l.getAttribute('href');
+    l.setAttribute('href', t.fav || l.dataset.orig);
+  });
   $('#logoImg').src = t.icon; $('#brand').textContent = t.brand; $('#brandSub').textContent = t.sub;
   $('#new').textContent = t.newChat; $('#q').placeholder = t.search; $('#input').placeholder = t.input;
   $('#hint').textContent = t.hint; $('#ordersTitle').textContent = t.orders; $('#wsTitle').textContent = t.ws;
