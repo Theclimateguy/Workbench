@@ -184,7 +184,12 @@ html:root[data-ui="classic"], html:root[data-ui="classic"][data-theme] {
 [data-ui="v2"] .strip { z-index: 10; height: 54px; border: 0 solid transparent;
   border-image: var(--t-frame) 128 / 0 0 64px 0 / 0 0 calc(var(--t-edge-out) - 2px) 0 round;
   box-shadow: inset 0 3px 0 var(--mode), inset 0 10px 18px -10px var(--mode), 0 10px 30px rgba(0, 0, 0, .6); }
-[data-ui="v2"] .strip > *, [data-ui="v2"] .strip .mem > *, [data-ui="v2"] .strip button { white-space: nowrap; flex-shrink: 0; }
+/* one line: controls on the right keep their size (skin button included), status chips on the left shrink */
+[data-ui="v2"] .strip > *, [data-ui="v2"] .strip .mem > * { white-space: nowrap; }
+[data-ui="v2"] .strip > button, [data-ui="v2"] .strip > .modesel, [data-ui="v2"] .strip > #profile, [data-ui="v2"] .strip > .brand,
+[data-ui="v2"] .strip .mem .bar { flex-shrink: 0; }
+[data-ui="v2"] .strip > .pill, [data-ui="v2"] .strip > .mem { flex-shrink: 1; min-width: 34px; overflow: hidden; text-overflow: ellipsis; }
+[data-ui="v2"] .strip > .pill .l, [data-ui="v2"] .strip > .pill .l2, [data-ui="v2"] .strip > .mem .h, [data-ui="v2"] .strip > .mem .v { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 [data-ui="v2"] .body { position: relative; }
 [data-ui="v2"] .rail { z-index: 3; border-right: 0; box-shadow: 6px 0 20px rgba(0, 0, 0, .5); }
 [data-ui="v2"] .panel { z-index: 3; border: 0 solid transparent; box-shadow: 10px 0 30px rgba(0, 0, 0, .6);
