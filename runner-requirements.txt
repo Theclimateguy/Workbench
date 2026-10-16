@@ -1,0 +1,21 @@
+# /var/lib/research/runner/venv — Python for the machine tools (scripts the assistant writes and runs).
+# The assistant can `pip install` more; this is the baseline the installer keeps present.
+numpy
+pandas
+scipy
+xarray
+netCDF4
+h5netcdf
+cftime
+dask
+matplotlib
+seaborn
+scikit-learn
+statsmodels
+pyarrow
+openpyxl
+requests
+httpx
+tqdm
+pypdf
+ipython

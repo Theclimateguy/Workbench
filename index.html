@@ -222,6 +222,23 @@ details.step .body { white-space: pre-wrap; margin: 6px 0 8px 14px; padding: 8px
 #modal textarea:focus { border-color: var(--cyan-line); }
 #modal .row { display: flex; justify-content: flex-end; gap: 8px; }
 
+/* --- workspace browser --- */
+#wsModal { position: fixed; inset: 0; z-index: 40; display: none; place-items: center; background: rgba(2, 4, 7, .75); }
+#wsModal.open { display: grid; }
+#wsModal .panel { width: min(760px, calc(100% - 32px)); max-height: calc(100% - 64px); display: flex; flex-direction: column;
+  padding: 20px; background-color: #0b131b; box-shadow: 0 0 0 1px var(--steel); }
+#wsModal h2 { margin: 0 0 4px; font: 700 15px var(--hud); letter-spacing: .16em; }
+#wsCrumbs { margin: 10px 0; font: 12.5px var(--mono); color: var(--muted); }
+#wsCrumbs a { color: var(--cyan); cursor: pointer; }
+#wsList { flex: 1; overflow-y: auto; font: 13px var(--mono); box-shadow: inset 0 0 0 1px var(--steel); }
+#wsList .f { display: flex; gap: 12px; padding: 6px 12px; align-items: baseline; }
+#wsList .f:hover { background: var(--cyan-soft); }
+#wsList .f a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); text-decoration: none; cursor: pointer; }
+#wsList .f.dir a { color: var(--cyan); }
+#wsList .f small { color: var(--muted); white-space: nowrap; }
+#wsModal .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; }
+.md img.ws { max-width: 100%; margin: 8px 0; background: #fff; box-shadow: 0 0 0 1px var(--steel); }
+
 @media (max-width: 860px) {
   #side { position: fixed; z-index: 30; inset: 0 auto 0 0; transform: translateX(-100%); transition: transform .2s; }
   #side.open { transform: none; box-shadow: 0 0 40px rgba(0, 0, 0, .7); }
@@ -245,6 +262,7 @@ details.step .body { white-space: pre-wrap; margin: 6px 0 8px 14px; padding: 8px
     <div id="chats"></div>
     <div class="foot">
       <span class="led" id="dot"></span><span class="label" id="model">…</span>
+      <button class="btn ghost" id="wsBtn" title="Workspace: files the assistant made on this machine">▦</button>
       <button class="btn ghost" id="settingsBtn" title="Standing orders (custom instructions)">⚙</button>
     </div>
   </aside>
@@ -268,6 +286,7 @@ details.step .body { white-space: pre-wrap; margin: 6px 0 8px 14px; padding: 8px
         <div id="row">
           <button class="tog" id="attach" title="Attach files (PDF, DOCX, text, code)">▤ Files</button>
           <button class="tog" id="toolsBtn" title="Internet tools: web, arXiv, Zenodo, GitHub">◎ Search</button>
+          <button class="tog" id="machineBtn" title="Machine: run scripts, manage files and download data in the workspace on this box">⌬ Machine</button>
           <button class="tog violet" id="thinkBtn" title="Reasoning depth (click to cycle)">◇ Think</button>
           <button id="send" class="bevel" disabled title="Send"></button>
         </div>
@@ -282,16 +301,26 @@ details.step .body { white-space: pre-wrap; margin: 6px 0 8px 14px; padding: 8px
   <textarea id="instr" placeholder="e.g. I am a climate scientist; prefer peer-reviewed sources; answer in Russian; use SI units."></textarea>
   <div class="row"><button class="btn ghost" id="mCancel">Cancel</button><button class="btn" id="mSave">Save</button></div>
 </div></div>
+<div id="wsModal"><div class="panel brackets">
+  <h2>WORKSPACE</h2>
+  <div class="label">files on this machine · scripts, data and results the assistant works with</div>
+  <div id="wsCrumbs"></div>
+  <div id="wsList"></div>
+  <div class="row"><span class="label" id="wsInfo"></span><button class="btn ghost" id="wsClose">Close</button></div>
+</div></div>
 <input type="file" id="file" multiple hidden>
 <div id="drop"><div class="brackets">DROP FILES TO UPLOAD</div></div>
 <script>
 const $ = s => document.querySelector(s);
+const isWs = h => /^\/ws\/[^:]*$/.test(h || '') && !h.includes('..');
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 marked.use({ gfm: true, breaks: false, renderer: {
   html(t) { return esc(t.text ?? t); },                        // never render raw HTML from the model or tools
-  link(t) { const h = /^(https?:|mailto:)/i.test(t.href) ? t.href : '#';
+  link(t) { const h = /^(https?:|mailto:)/i.test(t.href) || isWs(t.href) ? t.href : '#';
             return `<a href="${esc(h)}" target="_blank" rel="noopener noreferrer">${this.parser.parseInline(t.tokens)}</a>`; },
-  image(t) { return `<a href="${esc(t.href)}" target="_blank" rel="noopener noreferrer">${esc(t.text || t.href)}</a>`; },
+  image(t) { // workspace plots render inline; remote images stay links (no tracking pixels)
+    if (isWs(t.href)) return `<a href="${esc(t.href)}" target="_blank"><img class="ws" src="${esc(t.href)}" alt="${esc(t.text || '')}" loading="lazy"></a>`;
+    return `<a href="${esc(t.href)}" target="_blank" rel="noopener noreferrer">${esc(t.text || t.href)}</a>`; },
 }});
 const MATH = [{left:'$$',right:'$$',display:true},{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false},{left:'$',right:'$',display:false}];
 function md(el, text) {
@@ -309,6 +338,10 @@ const TOOL_LABEL = {
   gh_search_repos: a => `github.repos "${a.query}"`, gh_search_code: a => `github.code "${a.query}"`,
   gh_search_issues: a => `github.issues "${a.query}"`, gh_repo: a => `github.open ${a.repo}`,
   gh_read: a => `github.read ${a.repo}/${a.path || ''}`, read_upload: a => `file.read ${a.file_id}${a.offset ? ' @' + a.offset : ''}`,
+  run: a => `$ ${a.command}`, job_start: a => `job.start ${a.name || a.command}`, job_status: a => `job.status ${a.job_id || ''}`,
+  job_stop: a => `job.stop ${a.job_id}`, list_files: a => `ls ${a.path || '.'}`, read_file: a => `cat ${a.path}${a.offset ? ' @' + a.offset : ''}`,
+  write_file: a => `${a.append ? 'append' : 'write'} ${a.path}`, edit_file: a => `edit ${a.path}`,
+  download: a => `download ${a.url}${a.path ? ' → ' + a.path : ''}`, copy_upload: a => `file.copy ${a.file_id} → ${a.dest || 'uploads/'}`,
   library_search: a => `library.search "${a.query}"`, library_read: a => `library.read doc:${a.doc_id}${a.page ? ' p.' + a.page : ''}`, library_list: () => 'library.list',
 };
 const label = (n, a) => (TOOL_LABEL[n] ? TOOL_LABEL[n](a || {}) : n);
@@ -317,7 +350,7 @@ const store = { get: (k, d) => { try { return localStorage.getItem(k) ?? d; } ca
                 set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
 let chatId = null, pending = [], busy = null, lastMsgs = [];
-let toolsOn = store.get('tools', '1') !== '0', think = store.get('think', 'medium'), loadedRoot = '';
+let toolsOn = store.get('tools', '1') !== '0', machineOn = store.get('machine', '1') !== '0', think = store.get('think', 'medium'), loadedRoot = '';
 
 async function api(path, opt = {}) {
   const r = await fetch(path, opt);
@@ -354,11 +387,13 @@ const SUGG = [
   'Search Zenodo for open datasets of CMIP6 precipitation extremes',
   'Summarise the attached paper: contributions, method, limitations',
   'Find GitHub implementations of neural operators for weather forecasting',
+  'Download NASA GISTEMP global temperature anomalies, plot the trend since 1950 and save it as a project',
+  'Set up a project folder for my literature review on compound heat-drought events and collect the key papers',
 ];
 function newChat() {
   chatId = null; lastMsgs = []; $('#title').textContent = 'New mission'; setCtx(null);
   $('#msgs').innerHTML = `<div class="empty"><img src="/static/icons/icon-512.png" alt="">
-    <h1>AWAITING ORDERS</h1><p class="label">web · arxiv · zenodo · github · your files</p>
+    <h1>AWAITING ORDERS</h1><p class="label">web · arxiv · zenodo · github · your files · machine</p>
     <div class="sugg">${SUGG.map(s => `<button class="bevel">${esc(s)}</button>`).join('')}</div></div>`;
   $('#msgs').querySelectorAll('.sugg button').forEach(b => b.onclick = () => { $('#input').value = b.textContent; grow(); $('#input').focus(); });
   history.replaceState(null, '', '/'); $('#side').classList.remove('open'); loadChats(); $('#input').focus();
@@ -483,7 +518,7 @@ async function send(opts = {}) {
   try {
     const r = await fetch(`/api/chats/${chatId}/send`, { method: 'POST', signal: busy.signal,
       headers: {'content-type': 'application/json'},
-      body: JSON.stringify({ mode, text, files: files.map(f => f.id), tools: toolsOn, reasoning: think }) });
+      body: JSON.stringify({ mode, text, files: files.map(f => f.id), tools: toolsOn, machine: machineOn, reasoning: think }) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
     if (fresh) { loadChats(); $('#title').textContent = (text || files[0]?.name || '').slice(0, 60); }
     const reader = r.body.getReader(), dec = new TextDecoder(); let buf = '';
@@ -611,6 +646,25 @@ $('#mSave').onclick = async () => { await api('/api/settings', { method: 'PUT', 
 $('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').classList.remove('open'); };
 $('#exportBtn').onclick = () => { if (chatId) location.href = `/api/chats/${chatId}/export.md`; };
 
+/* ---- workspace browser ---- */
+const size = n => n < 1024 ? n + ' B' : n < 2**20 ? (n / 1024).toFixed(1) + ' KB' : n < 2**30 ? (n / 2**20).toFixed(1) + ' MB' : (n / 2**30).toFixed(2) + ' GB';
+async function openWs(path = '') {
+  let d; try { d = await api('/api/workspace?path=' + encodeURIComponent(path)); } catch (e) { alert(e.message); return; }
+  const parts = d.path ? d.path.split('/') : [];
+  $('#wsCrumbs').innerHTML = '<a data-p="">workspace</a>' + parts.map((x, i) => ` / <a data-p="${esc(parts.slice(0, i + 1).join('/'))}">${esc(x)}</a>`).join('');
+  $('#wsCrumbs').querySelectorAll('a').forEach(a => a.onclick = () => openWs(a.dataset.p));
+  $('#wsList').innerHTML = d.items.length ? d.items.map(f => `<div class="f ${f.dir ? 'dir' : ''}"><a data-p="${esc(f.path)}" data-dir="${f.dir ? 1 : ''}"
+    ${f.dir ? '' : `href="/ws/${f.path.split('/').map(encodeURIComponent).join('/')}" target="_blank"`}>${f.dir ? '▸ ' : ''}${esc(f.name)}${f.dir ? '/' : ''}</a>
+    <small>${f.dir ? '' : size(f.size)}</small><small>${new Date(f.mtime * 1000).toLocaleString([], {dateStyle: 'short', timeStyle: 'short'})}</small></div>`).join('')
+    : '<div class="f"><small>empty — ask the assistant to start a project</small></div>';
+  $('#wsList').querySelectorAll('a[data-dir="1"]').forEach(a => a.onclick = () => openWs(a.dataset.p));
+  $('#wsInfo').textContent = `${d.items.length} item${d.items.length === 1 ? '' : 's'}`;
+  $('#wsModal').classList.add('open');
+}
+$('#wsBtn').onclick = () => openWs('');
+$('#wsClose').onclick = () => $('#wsModal').classList.remove('open');
+$('#wsModal').onclick = e => { if (e.target.id === 'wsModal') $('#wsModal').classList.remove('open'); };
+
 /* ---- wiring ---- */
 function grow() { const t = $('#input'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 240) + 'px'; updateSend(); }
 $('#input').addEventListener('input', grow);
@@ -625,14 +679,17 @@ const paintTools = () => { $('#toolsBtn').classList.toggle('on', toolsOn); $('#t
 $('#toolsBtn').onclick = () => { toolsOn = !toolsOn; store.set('tools', toolsOn ? '1' : '0'); paintTools(); };
 const paintThink = () => { $('#thinkBtn').classList.toggle('on', think !== 'off'); $('#thinkBtn').textContent = '◇ Think: ' + (think === 'medium' ? 'med' : think); };
 $('#thinkBtn').onclick = () => { think = THINK[(THINK.indexOf(think) + 1) % THINK.length]; store.set('think', think); paintThink(); };
-paintTools(); paintThink(); setBusy(false);
+const paintMachine = () => { $('#machineBtn').classList.toggle('on', machineOn); $('#machineBtn').textContent = machineOn ? '⌬ Machine' : '⌬ No machine'; };
+$('#machineBtn').onclick = () => { machineOn = !machineOn; store.set('machine', machineOn ? '1' : '0'); paintMachine(); };
+paintTools(); paintThink(); paintMachine(); setBusy(false);
+api('/api/status').then(s => { if (!s.machine) $('#machineBtn').style.display = 'none'; }).catch(() => {});
 let dragN = 0;
 addEventListener('dragenter', e => { e.preventDefault(); dragN++; $('#drop').style.display = 'grid'; });
 addEventListener('dragleave', () => { if (--dragN <= 0) { dragN = 0; $('#drop').style.display = 'none'; } });
 addEventListener('dragover', e => e.preventDefault());
 addEventListener('drop', e => { e.preventDefault(); dragN = 0; $('#drop').style.display = 'none'; addFiles([...e.dataTransfer.files]); });
 addEventListener('paste', e => { const f = [...(e.clipboardData?.files || [])]; if (f.length) { e.preventDefault(); addFiles(f); } });
-addEventListener('keydown', e => { if (e.key === 'Escape') { $('#modal').classList.remove('open'); $('#reactorPanel').classList.remove('open'); } });
+addEventListener('keydown', e => { if (e.key === 'Escape') { $('#modal').classList.remove('open'); $('#wsModal').classList.remove('open'); $('#reactorPanel').classList.remove('open'); } });
 location.hash.length > 1 ? openChat(location.hash.slice(1)) : newChat();
 </script>
 </body>

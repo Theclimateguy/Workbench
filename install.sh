@@ -2,11 +2,15 @@
 # install.sh — install or update the research chat on this GB10 box (idempotent).
 #   research/ -> /opt/research (code + venv), chats and uploads in /var/lib/research,
 #   settings in /etc/research/research.env (created once: bind address, password, tokens).
+#   Machine tools (shell, files, downloads) run as the unprivileged user `researcher` in /var/lib/research/workspace,
+#   behind an outbound network fence (bin/runner-net: internet, DNS and the LLM API only).
 # Needs the LLM stack (llm@fast or llm@deep on 127.0.0.1:8000) and docker for SearXNG.
 set -euo pipefail
 SRC=$(cd "$(dirname "$0")" && pwd)
 DEST=/opt/research
 RUN_USER=${RUN_USER:-$(id -un)}
+RUNNER=researcher
+DATA=/var/lib/research
 log() { printf '\033[1;34m[research]\033[0m %s\n' "$*"; }
 [ "$(id -u)" != 0 ] || { echo "run as the operator user (with sudo rights), not root" >&2; exit 1; }
 
@@ -40,6 +44,30 @@ log "python venv"
 [ -x "$DEST/venv/bin/python" ] || python3 -m venv "$DEST/venv"
 "$DEST/venv/bin/pip" install -q --upgrade pip
 "$DEST/venv/bin/pip" install -q -r "$DEST/requirements.txt"
+
+log "machine tools: user $RUNNER (no sudo, no docker), workspace $DATA/workspace"
+if ! id "$RUNNER" >/dev/null 2>&1; then
+  sudo useradd --system --user-group --home-dir "$DATA/runner" --no-create-home --shell /bin/bash \
+    --comment "Research chat machine tools" "$RUNNER"
+fi
+id -nG "$RUN_USER" | tr ' ' '\n' | grep -qx "$RUNNER" || sudo usermod -aG "$RUNNER" "$RUN_USER"  # chat serves results
+sudo install -d -o "$RUNNER" -g "$RUNNER" -m 700 "$DATA/runner"
+sudo install -d -o "$RUNNER" -g "$RUNNER" -m 2775 "$DATA/workspace"
+# chats and uploads: operator only (the runner may traverse $DATA to reach its own dirs, nothing else)
+sudo chmod 711 "$DATA"
+sudo chmod 700 "$DATA/uploads" 2>/dev/null || true
+sudo find "$DATA" -maxdepth 1 -name 'chats.db*' -exec chmod 600 {} +
+printf '%s ALL=(%s) NOPASSWD: %s %s\n' "$RUN_USER" "$RUNNER" "$DEST/venv/bin/python" "$DEST/tools/machine.py" \
+  | sudo tee /etc/sudoers.d/92-research-runner >/dev/null
+sudo chmod 440 /etc/sudoers.d/92-research-runner
+sudo visudo -cf /etc/sudoers.d/92-research-runner >/dev/null || { sudo rm -f /etc/sudoers.d/92-research-runner; log "  runner sudoers rule rejected, removed"; }
+sudo install -m 644 "$DEST/systemd/research-runner-net.service" /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --quiet research-runner-net
+sudo systemctl restart research-runner-net
+log "runner python (scientific stack, a few minutes the first time)"
+sudo -u "$RUNNER" -H bash -c "cd '$DATA/runner' && { [ -x venv/bin/python ] || python3 -m venv venv; } \
+  && venv/bin/pip install -q --upgrade pip && venv/bin/pip install -q -r '$DEST/runner-requirements.txt'"
 
 log "systemd units (user: $RUN_USER)"
 for u in research-chat.service research-search.service research-mdns.service; do

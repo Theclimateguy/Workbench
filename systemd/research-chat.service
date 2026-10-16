@@ -1,7 +1,9 @@
 [Unit]
 Description=Research chat (local LLM + web/arXiv/Zenodo/GitHub tools)
-After=network-online.target research-search.service
+After=network-online.target research-search.service research-runner-net.service
 Wants=research-search.service
+# the machine tools run only behind the network fence
+Requires=research-runner-net.service
 
 [Service]
 Type=simple
@@ -11,6 +13,12 @@ WorkingDirectory=/opt/research
 EnvironmentFile=/etc/research/research.env
 Environment=RESEARCH_DATA=/var/lib/research
 Environment=STACK_DIR=/opt/support-stack
+Environment=RESEARCH_RUN_AS=researcher
+Environment=RESEARCH_WORKSPACE=/var/lib/research/workspace
+# app + every command the assistant runs (they stay in this cgroup): leave the rest of the 128 GB to the LLM
+MemoryHigh=16G
+MemoryMax=20G
+TasksMax=4096
 ExecStart=/opt/research/venv/bin/uvicorn app:app --host ${RESEARCH_BIND} --port ${RESEARCH_PORT} --log-level warning
 Restart=on-failure
 RestartSec=5

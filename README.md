@@ -9,7 +9,27 @@ browser ── :8090 ── app.py (FastAPI · SQLite history · uploads) ──
                       └─ MCP (stdio): tools/web.py     web_search (local SearXNG :8888), fetch_url (HTML/PDF → text)
                                       tools/papers.py  arxiv_search, arxiv_paper (+ full text), zenodo_search, zenodo_record
                                       tools/github.py  gh_search_repos/_code/_issues, gh_repo, gh_read  (read-only)
+                                      tools/machine.py run, job_start/_status/_stop, list_files, read_file,
+                                                       write_file, edit_file, download   (as user `researcher`)
 ```
+
+**Machine tools.** The assistant works in a research workspace on the box: writes and runs scripts (bash, up to
+15 min per command; longer work as background jobs), downloads data, organises projects
+(`<project>/data, scripts, results, notes.md`) and shows plots inline (`![](/ws/<path>)`). The **▦** button in
+the sidebar browses the workspace; the **⌬ Machine** toggle turns these tools off for a message.
+
+- Workspace `/var/lib/research/workspace` (group `researcher`, setgid; the chat serves it read-only at `/ws/`
+  with a sandbox CSP). Python: `/var/lib/research/runner/venv` (numpy, pandas, scipy, xarray, netCDF4, dask,
+  matplotlib, scikit-learn, statsmodels, … — `runner-requirements.txt`); `pip install` adds more. `copy_upload`
+  puts an uploaded file into the workspace.
+- **Sandbox.** The tool server and everything it starts run as the system user `researcher` (no sudo, no docker
+  group, `no_new_privs`), started through one exact sudoers rule (`/etc/sudoers.d/92-research-runner`). It cannot
+  read the operator's home, the chats or uploads (`/var/lib/research` 711, `chats.db` 600, `uploads/` 700).
+  Outbound network fence `bin/runner-net` (`research-runner-net.service`, iptables owner match): internet, DNS and
+  the LLM API `127.0.0.1:8000` only — no other local service (this chat, Workbench, OpenCode, SSH, docker), LAN or
+  VPN. The tool server refuses to start if the fence is down. Memory: `MemoryMax=20G` for the chat and its jobs,
+  so scripts cannot starve the LLM.
+- Background jobs stop when the chat service restarts (deploys included).
 
 **Features.** Chat history with search, rename, delete, Markdown export · file uploads · reactor menu (load /
 unload `fast` | `deep` | `nemotron`; switching stops the running profile, loads take 5–10 min; also used by the
