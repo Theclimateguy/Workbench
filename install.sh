@@ -53,6 +53,8 @@ fi
 id -nG "$RUN_USER" | tr ' ' '\n' | grep -qx "$RUNNER" || sudo usermod -aG "$RUNNER" "$RUN_USER"  # chat serves results
 sudo install -d -o "$RUNNER" -g "$RUNNER" -m 700 "$DATA/runner"
 sudo install -d -o "$RUNNER" -g "$RUNNER" -m 2775 "$DATA/workspace"
+# /ws: the same path in commands and in chat links (/ws/<file> is served by the chat)
+[ -e /ws ] && [ ! -L /ws ] || sudo ln -sfn "$DATA/workspace" /ws
 # chats and uploads: operator only (the runner may traverse $DATA to reach its own dirs, nothing else)
 sudo chmod 711 "$DATA"
 sudo chmod 700 "$DATA/uploads" 2>/dev/null || true

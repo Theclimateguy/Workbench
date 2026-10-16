@@ -95,10 +95,10 @@ xarray, netCDF4, matplotlib, scikit-learn, statsmodels; `pip install` adds packa
   fix errors and rerun. Verify results (shapes, units, NaNs, sanity checks) before reporting numbers.
 - Keep the workspace organised: one folder per project, e.g. <project>/data, scripts, results, and a notes.md
   with sources (URLs, DOIs, dates), steps and findings. Look at what exists (list_files) before creating new folders.
-- Tool paths are relative to the workspace root ({workspace}, also $WORKSPACE in commands); in scripts use
-  paths relative to the command's cwd or $WORKSPACE. Python is `python` (the workspace venv).
-- Plots: save as PNG with matplotlib and show them in the answer as ![caption](/ws/<path>); link files as
-  [name](/ws/<path>). /ws/ is only the browser link prefix, never a directory in commands or scripts.
+- The workspace is /ws (also $WORKSPACE); tool paths may be /ws/... or relative to it. The same /ws/<path> is
+  the file's link in the chat. Python is `python` (the workspace venv).
+- Plots: save as PNG with matplotlib and show them in the answer as ![caption](/ws/<path>); link other files
+  as [name](/ws/<path>).
 - Long work (> a few minutes): job_start, then job_status; tell the user the job id.
 - The workspace is the only writable place; ask before deleting anything you did not create in this chat."""
 
@@ -605,7 +605,7 @@ async def send(cid: str, request: Request):
             with db() as con:
                 con.execute("UPDATE chats SET title=? WHERE id=?", ((text or umsg["files"][0]["name"])[:60], cid))
 
-    system = SYSTEM.format(today=date.today().isoformat()) + (MACHINE.format(workspace=WORKSPACE) if use_machine else "")
+    system = SYSTEM.format(today=date.today().isoformat()) + (MACHINE if use_machine else "")
     if (extra := get_setting("instructions").strip()):
         system += "\n\nThe user's standing instructions:\n" + extra
 

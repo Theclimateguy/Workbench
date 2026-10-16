@@ -97,10 +97,16 @@ def rel(p: Path) -> str:
     return str(p.relative_to(WS)) if p != WS else "."
 
 
+def ws(p: Path) -> str:
+    """How the model should see a path: /ws/... is both the directory (symlink) and the chat link."""
+    return "/ws/" + rel(p) if p != WS else "/ws"
+
+
 def env() -> dict:
     e = {k: v for k, v in os.environ.items() if k in ("LANG", "LC_ALL", "TERM", "TZ")}
     path = f"{VENV}/bin:" if (VENV / "bin").is_dir() else ""
-    e.update({"HOME": str(HOME), "USER": os.environ.get("USER", "researcher"), "WORKSPACE": str(WS),
+    e.update({"HOME": str(HOME), "USER": os.environ.get("USER", "researcher"),
+              "WORKSPACE": "/ws" if Path("/ws").resolve() == WS else str(WS),
               "PATH": path + "/usr/local/bin:/usr/bin:/bin", "MPLBACKEND": "Agg", "PYTHONUNBUFFERED": "1",
               "PIP_DISABLE_PIP_VERSION_CHECK": "1", "LLM_URL": "http://127.0.0.1:8000", "LANG": e.get("LANG", "C.UTF-8")})
     if (VENV / "bin").is_dir():
@@ -129,8 +135,7 @@ def human(n: float) -> str:
 def run(command: str, cwd: str = "", timeout: int = 120) -> str:
     """Run a bash command in the research workspace and return exit code + output (stdout and stderr merged).
     For scripts, data processing, git clone, pip install, quick checks (ls, head, grep, wc, python -c ...).
-    cwd: workspace-relative directory (default: workspace root, also in $WORKSPACE). Inside scripts use paths
-    relative to the cwd or $WORKSPACE — /ws/... is only the browser link, not a directory. timeout: seconds, max 900 — use job_start for
+    cwd: directory in the workspace (default: the workspace root /ws, also $WORKSPACE). timeout: seconds, max 900 — use job_start for
     anything longer (training, big downloads, long simulations). Python is a venv with numpy, pandas, scipy,
     xarray, matplotlib (Agg backend: save plots to files), scikit-learn, statsmodels; `pip install X` adds more.
     The local LLM's OpenAI API is at $LLM_URL for batch processing from scripts."""
@@ -147,7 +152,7 @@ def run(command: str, cwd: str = "", timeout: int = 120) -> str:
         out, _ = proc.communicate()
         status = f"KILLED after {timeout}s timeout (use job_start for long work)"
     text = out.decode("utf-8", "replace")
-    return f"[{status} · {time.time() - t0:.1f}s · cwd {wd}]\n{clip(text) or '[no output]'}"
+    return f"[{status} · {time.time() - t0:.1f}s · cwd {ws(wd)}]\n{clip(text) or '[no output]'}"
 
 
 # ---------- background jobs ----------
