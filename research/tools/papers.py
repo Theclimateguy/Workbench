@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 
 from mcp.server.fastmcp import FastMCP
 
-from common import client, html_to_text, page, pdf_to_text
+from common import client, get, html_to_text, page, pdf_to_text
 
 ATOM = {"a": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
 ZENODO = "https://zenodo.org/api"
@@ -49,7 +49,7 @@ def arxiv_search(query: str, max_results: int = 10, sort: str = "relevance", cat
     params = {"search_query": q, "start": 0, "max_results": max(1, min(max_results, 30)),
               "sortBy": "submittedDate" if sort == "date" else "relevance", "sortOrder": "descending"}
     with client() as c:
-        r = c.get("https://export.arxiv.org/api/query", params=params)
+        r = get(c, "https://export.arxiv.org/api/query", params=params)
         r.raise_for_status()
     entries = ET.fromstring(r.text).findall("a:entry", ATOM)
     return "\n\n".join(_entry(e, False) for e in entries) or "No results."
@@ -61,7 +61,7 @@ def arxiv_paper(arxiv_id: str, full_text: bool = False, offset: int = 0) -> str:
     (HTML version if arXiv has one, otherwise the PDF). Paged: pass offset to continue."""
     aid = _arxiv_id(arxiv_id)
     with client() as c:
-        r = c.get("https://export.arxiv.org/api/query", params={"id_list": aid})
+        r = get(c, "https://export.arxiv.org/api/query", params={"id_list": aid})
         r.raise_for_status()
         entries = ET.fromstring(r.text).findall("a:entry", ATOM)
         if not entries:
@@ -69,11 +69,11 @@ def arxiv_paper(arxiv_id: str, full_text: bool = False, offset: int = 0) -> str:
         meta = _entry(entries[0], True)
         if not full_text:
             return meta
-        h = c.get(f"https://arxiv.org/html/{aid}")
+        h = get(c, f"https://arxiv.org/html/{aid}")
         if h.status_code == 200 and "<html" in h.text[:2000].lower():
             text = html_to_text(h.text, str(h.url))
         else:
-            p = c.get(f"https://arxiv.org/pdf/{aid}")
+            p = get(c, f"https://arxiv.org/pdf/{aid}")
             p.raise_for_status()
             text = pdf_to_text(p.content)
     return (meta + "\n\n--- full text ---\n" if offset == 0 else "") + page(text, offset)
@@ -82,7 +82,7 @@ def arxiv_paper(arxiv_id: str, full_text: bool = False, offset: int = 0) -> str:
 def _zget(path: str, **params):
     headers = {"Authorization": f"Bearer {ZENODO_TOKEN}"} if ZENODO_TOKEN else {}
     with client(headers=headers) as c:
-        r = c.get(f"{ZENODO}{path}", params=params)
+        r = get(c, f"{ZENODO}{path}", params=params)
         r.raise_for_status()
         return r.json()
 

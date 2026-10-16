@@ -1,19 +1,51 @@
-"""Shared helpers for the research MCP servers: one HTTP client, HTML/PDF -> text, output paging."""
+"""Shared helpers for the research MCP servers: one HTTP client (retries, size cap), HTML/PDF -> text, output paging."""
 from __future__ import annotations
 
 import io
 import os
 import re
+import time
 from html.parser import HTMLParser
 
 import httpx
 
-UA = os.environ.get("RESEARCH_UA", "research-chat/1.0 (personal research assistant)")
+# Wikimedia and others refuse clients without a contact URL in the User-Agent (403 "respect our robot policy")
+UA = os.environ.get("RESEARCH_UA", "research-chat/1.0 (https://github.com/Theclimateguy/Workbench; personal research assistant) python-httpx")
 MAX_CHARS = int(os.environ.get("RESEARCH_TOOL_MAX_CHARS", "12000"))
+FETCH_MAX = int(os.environ.get("RESEARCH_FETCH_MAX_MB", "60")) * 2**20  # pages/PDFs read into memory; data -> download
+RETRY_STATUS = {429, 500, 502, 503, 504}
 
 
 def client(headers: dict | None = None) -> httpx.Client:
     return httpx.Client(timeout=30, follow_redirects=True, headers={"User-Agent": UA, **(headers or {})})
+
+
+def get(c: httpx.Client, url: str, tries: int = 3, max_bytes: int = FETCH_MAX, **kw) -> httpx.Response:
+    """GET with a few retries on transient failures (connection errors, timeouts, 429/5xx; Retry-After is honoured
+    up to 20 s) and a size cap, so one slow API or one huge file cannot wedge a tool server."""
+    for i in range(tries):
+        last = i == tries - 1
+        try:
+            with c.stream("GET", url, **kw) as r:
+                if r.status_code in RETRY_STATUS and not last:
+                    ra = r.headers.get("retry-after", "")
+                    time.sleep(min(float(ra), 20) if ra.isdigit() else 2 * 2 ** i)
+                    continue
+                if int(r.headers.get("content-length") or 0) > max_bytes:
+                    raise ValueError(f"{url} is larger than {max_bytes >> 20} MB; use the download tool for data files")
+                body = bytearray()
+                for chunk in r.iter_bytes(1 << 16):
+                    body += chunk
+                    if len(body) > max_bytes:
+                        raise ValueError(f"{url} is larger than {max_bytes >> 20} MB; use the download tool for data files")
+                headers = [(k, v) for k, v in r.headers.multi_items()  # body is already decoded
+                           if k.lower() not in ("content-encoding", "content-length", "transfer-encoding")]
+                return httpx.Response(r.status_code, headers=headers, content=bytes(body), request=r.request)
+        except httpx.TransportError:
+            if last:
+                raise
+            time.sleep(2 * 2 ** i)
+    raise RuntimeError("unreachable")
 
 
 def page(text: str, offset: int = 0, limit: int = MAX_CHARS) -> str:

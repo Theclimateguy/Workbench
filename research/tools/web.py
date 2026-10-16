@@ -9,7 +9,7 @@ import os
 
 from mcp.server.fastmcp import FastMCP
 
-from common import client, page, response_to_text
+from common import client, get, page, response_to_text
 
 SEARXNG = os.environ.get("SEARXNG_URL", "http://127.0.0.1:8888").rstrip("/")
 mcp = FastMCP("web")
@@ -23,7 +23,7 @@ def web_search(query: str, max_results: int = 8, time_range: str = "") -> str:
     if time_range in ("day", "month", "year"):
         params["time_range"] = time_range
     with client() as c:
-        r = c.get(f"{SEARXNG}/search", params=params)
+        r = get(c, f"{SEARXNG}/search", params=params)
         r.raise_for_status()
         data = r.json()
     out = []
@@ -41,7 +41,7 @@ def fetch_url(url: str, offset: int = 0) -> str:
     if not url.startswith(("http://", "https://")):
         return "Only http(s) URLs are supported."
     with client() as c:
-        r = c.get(url)
+        r = get(c, url)
     if r.status_code >= 400:
         return f"HTTP {r.status_code} for {url}"
     return f"URL: {r.url}\n\n" + page(response_to_text(r), offset)

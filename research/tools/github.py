@@ -10,7 +10,7 @@ import os
 
 from mcp.server.fastmcp import FastMCP
 
-from common import client, page
+from common import client, get, page
 
 API = "https://api.github.com"
 TOKEN = os.environ.get("GITHUB_TOKEN", "")
@@ -22,7 +22,7 @@ def _get(path: str, raw: bool = False, **params):
     if TOKEN:
         headers["Authorization"] = f"Bearer {TOKEN}"
     with client(headers=headers) as c:
-        r = c.get(f"{API}{path}", params=params)
+        r = get(c, f"{API}{path}", params=params)
     if r.status_code == 404:
         raise ValueError(f"not found: {path}")
     if r.status_code in (401, 403):
@@ -89,7 +89,7 @@ def gh_read(repo: str, path: str = "", ref: str = "", offset: int = 0) -> str:
         text = base64.b64decode(data["content"]).decode("utf-8", "replace")
     else:  # files > 1 MB come without content
         with client() as c:
-            text = c.get(data["download_url"]).text
+            text = get(c, data["download_url"]).text
     return page(text, offset)
 
 

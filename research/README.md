@@ -15,6 +15,24 @@ browser ── :8090 ── app.py (FastAPI · SQLite history · uploads) ──
                                                        write_file, edit_file, download   (as user `researcher`)
 ```
 
+**Sources.** Search results are snippets; what the assistant actually *reads* (`fetch_url`, `arxiv_paper`,
+`zenodo_record`, `gh_repo`, `gh_read`, `library_read`, `download`) is saved per chat as source **S1, S2, …**
+(`tools/sources.py`, tables `sources` / `source_parts` in `chats.db`): reference, URL, title, fetch times, which
+parts were read (in the tool's own `offset` coordinates, or PDF pages) and a sha256 of the text read (of the file,
+for downloads). The model cites `[S3]` (the chat links it), sees a one-line summary of every source with what it has
+and has *not* read, and re-reads with `source_read(n, offset)` / `sources_list` once older tool output has been trimmed
+from the prompt; an unread stretch comes back with the exact call that opens it. The **❞** button lists the
+sources; the Markdown export appends them.
+
+**Tool loop.** Each MCP server runs in its own supervisor task: a crashed or hung server is restarted (read-only
+tools are retried once; machine tools are not, they may have side effects). Arguments are checked before a call
+(valid JSON, required fields, tool offered in this message — so Offline mode cannot be bypassed by a hallucinated
+call); an identical read-only call in the same answer, or a third identical call in a row, is answered without
+running it; three errors in a row add a hint to change approach. HTTP in the tools retries connection errors,
+timeouts and 429/5xx (honouring `Retry-After`) and refuses pages over 60 MB. Every call is logged to `tool_calls`
+(model, tool, args, ms, ok, note); `GET /api/tool-stats?days=30` aggregates errors, latency and repeats per model and
+tool, `GET /api/status` shows the state of each tool server.
+
 **Machine tools.** The assistant works in a research workspace on the box: writes and runs scripts (bash, up to
 15 min per command; longer work as background jobs), downloads data, organises projects
 (`<project>/data, scripts, results, notes.md`) and shows plots inline (`![](/ws/<path>)`). The **▦** button in

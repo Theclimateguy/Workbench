@@ -230,20 +230,22 @@ details.step .body { white-space: pre-wrap; margin: 6px 0 8px 14px; padding: 8px
 #modal .row { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* --- workspace browser --- */
-#wsModal { position: fixed; inset: 0; z-index: 40; display: none; place-items: center; background: rgba(2, 4, 7, .75); }
-#wsModal.open { display: grid; }
-#wsModal .panel { width: min(760px, calc(100% - 32px)); max-height: calc(100% - 64px); display: flex; flex-direction: column;
+#wsModal, #srcModal { position: fixed; inset: 0; z-index: 40; display: none; place-items: center; background: rgba(2, 4, 7, .75); }
+#wsModal.open, #srcModal.open { display: grid; }
+#wsModal .panel, #srcModal .panel { width: min(760px, calc(100% - 32px)); max-height: calc(100% - 64px); display: flex; flex-direction: column;
   padding: 20px; background-color: var(--panel); box-shadow: 0 0 0 1px var(--steel); }
-#wsModal h2 { margin: 0 0 4px; font: 700 15px var(--hud); letter-spacing: .16em; }
+#wsModal h2, #srcModal h2 { margin: 0 0 4px; font: 700 15px var(--hud); letter-spacing: .16em; }
 #wsCrumbs { margin: 10px 0; font: 12.5px var(--mono); color: var(--muted); }
 #wsCrumbs a { color: var(--cyan); cursor: pointer; }
-#wsList { flex: 1; overflow-y: auto; font: 13px var(--mono); box-shadow: inset 0 0 0 1px var(--steel); }
-#wsList .f { display: flex; gap: 12px; padding: 6px 12px; align-items: baseline; }
-#wsList .f:hover { background: var(--cyan-soft); }
-#wsList .f a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); text-decoration: none; cursor: pointer; }
+#wsList, #srcList { flex: 1; overflow-y: auto; font: 13px var(--mono); box-shadow: inset 0 0 0 1px var(--steel); }
+#wsList .f, #srcList .f { display: flex; gap: 12px; padding: 6px 12px; align-items: baseline; }
+#wsList .f:hover, #srcList .f:hover { background: var(--cyan-soft); }
+#wsList .f a, #srcList .f a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); text-decoration: none; cursor: pointer; }
 #wsList .f.dir a { color: var(--cyan); }
-#wsList .f small { color: var(--muted); white-space: nowrap; }
-#wsModal .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; }
+#wsList .f small, #srcList .f small { color: var(--muted); white-space: nowrap; }
+#srcList .f b { color: var(--cyan); font-weight: 600; min-width: 2.6em; }
+#srcList .f a:not([href]) { cursor: default; }
+#wsModal .row, #srcModal .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; }
 .md img.ws { max-width: 100%; margin: 8px 0; background: #fff; box-shadow: 0 0 0 1px var(--steel); }
 
 /* --- console overlays (art/frames.py): the bottom console like a StarCraft HUD, heavy edges on the top bar and the
@@ -261,7 +263,7 @@ details.step .body { white-space: pre-wrap; margin: 6px 0 8px 14px; padding: 8px
   border-image: var(--frame-img) 128 / 0 72px 0 0 / 0 var(--edge-out) 0 0 round; }
 #side .ops, #chats, #side .foot { margin-right: 14px; }
 #scroll { padding-top: 14px; }
-#reactorPanel, #modal .panel, #wsModal .panel { box-shadow: 0 18px 50px rgba(0, 0, 0, .75); }
+#reactorPanel, #modal .panel, #wsModal .panel, #srcModal .panel { box-shadow: 0 18px 50px rgba(0, 0, 0, .75); }
 .hint { margin-top: 6px; }
 
 /* ===================== Zerg hive-mind theme (data-theme="zerg") ===================== */
@@ -307,7 +309,7 @@ details.step .body { white-space: pre-wrap; margin: 6px 0 8px 14px; padding: 8px
 :root[data-theme="zerg"] #q, :root[data-theme="zerg"] .chip, :root[data-theme="zerg"] .tog { border-radius: 999px; }
 :root[data-theme="zerg"] .unit { border-radius: 16px; }
 :root[data-theme="zerg"] .md pre, :root[data-theme="zerg"] details.step .body, :root[data-theme="zerg"] #modal textarea,
-:root[data-theme="zerg"] #wsList, :root[data-theme="zerg"] .md img.ws { border-radius: 12px; }
+:root[data-theme="zerg"] #wsList, :root[data-theme="zerg"] #srcList, :root[data-theme="zerg"] .md img.ws { border-radius: 12px; }
 :root[data-theme="zerg"] details.step summary::before { content: "∿"; }
 :root[data-theme="zerg"] details.step.think summary::before { content: "◍"; }
 :root[data-theme="zerg"] .chip::before { content: "◉"; }
@@ -351,6 +353,7 @@ details.step .body { white-space: pre-wrap; margin: 6px 0 8px 14px; padding: 8px
       <button id="menu" class="btn ghost" aria-label="Chats">☰</button>
       <div id="title">New mission</div>
       <div id="ctx" title="Context used by the last request"><div class="label" id="ctxLabel">ctx —</div><div class="bar"><div class="fill"></div></div></div>
+      <button class="btn ghost" id="srcBtn" title="Sources read in this chat">❞</button>
       <button class="btn ghost" id="exportBtn" title="Export chat as Markdown">⤓</button>
       <div id="reactor">
         <button class="btn bevel" id="reactorBtn"><span class="led" id="rled"></span><span class="name" id="rname">—</span>▾</button>
@@ -388,6 +391,12 @@ details.step .body { white-space: pre-wrap; margin: 6px 0 8px 14px; padding: 8px
   <div id="wsList"></div>
   <div class="row"><span class="label" id="wsInfo"></span><button class="btn ghost" id="wsClose">Close</button></div>
 </div></div>
+<div id="srcModal"><div class="panel brackets">
+  <h2 id="srcTitle">SOURCES</h2>
+  <div class="label">what the assistant actually read in this chat · cited as [S1], [S2] …</div>
+  <div id="srcList"></div>
+  <div class="row"><span class="label" id="srcInfo"></span><button class="btn ghost" id="srcClose">Close</button></div>
+</div></div>
 <input type="file" id="file" multiple hidden>
 <div id="drop"><div class="brackets" id="dropText">DROP FILES TO UPLOAD</div></div>
 <script>
@@ -406,6 +415,7 @@ const MATH = [{left:'$$',right:'$$',display:true},{left:'\\[',right:'\\]',displa
 function md(el, text) {
   // protect math from markdown (underscores, backslashes), render markdown, then KaTeX
   const keep = [];
+  text = text.replace(/\[S(\d+)\](?!\()/g, (m, n) => srcMap[n]?.url ? `[S${n}](<${srcMap[n].url}>)` : m);
   const src = text.replace(/(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|(?<![\\$\w])\$(?!\s)[^$\n]+?(?<!\s)\$(?!\w))/g, m => { keep.push(m); return `\u0000${keep.length-1}\u0000`; });
   el.innerHTML = marked.parse(src).replace(/\u0000(\d+)\u0000/g, (_, i) => esc(keep[i]));
   try { renderMathInElement(el, { delimiters: MATH, throwOnError: false }); } catch {}
@@ -423,6 +433,7 @@ const TOOL_LABEL = {
   write_file: a => `${a.append ? 'append' : 'write'} ${a.path}`, edit_file: a => `edit ${a.path}`,
   download: a => `download ${a.url}${a.path ? ' → ' + a.path : ''}`, copy_upload: a => `file.copy ${a.file_id} → ${a.dest || 'uploads/'}`,
   library_search: a => `library.search "${a.query}"`, library_read: a => `library.read doc:${a.doc_id}${a.page ? ' p.' + a.page : ''}`, library_list: () => 'library.list',
+  sources_list: () => 'sources.list', source_read: a => `sources.read S${a.n}${a.offset ? ' @' + a.offset : ''}`,
 };
 const label = (n, a) => (TOOL_LABEL[n] ? TOOL_LABEL[n](a || {}) : n);
 const THINK = ['off', 'low', 'medium', 'high'];
@@ -443,7 +454,8 @@ const store = { get: (k, d) => { try { return localStorage.getItem(k) ?? d; } ca
 let theme = THEMES[store.get('theme', 'terran')] ? store.get('theme', 'terran') : 'terran';
 const T = () => THEMES[theme];
 
-let chatId = null, pending = [], busy = null, lastMsgs = [];
+let chatId = null, pending = [], busy = null, lastMsgs = [], srcMap = {};
+const setSources = list => { srcMap = {}; for (const s of list || []) srcMap[s.n] = s; };
 let toolsOn = store.get('tools', '1') !== '0', machineOn = store.get('machine', '1') !== '0', think = store.get('think', 'medium'), loadedRoot = '';
 
 async function api(path, opt = {}) {
@@ -485,7 +497,7 @@ const SUGG = [
   'Set up a project folder for my literature review on compound heat-drought events and collect the key papers',
 ];
 function newChat() {
-  chatId = null; lastMsgs = []; $('#title').textContent = T().untitled; setCtx(null);
+  chatId = null; lastMsgs = []; srcMap = {}; $('#title').textContent = T().untitled; setCtx(null);
   $('#msgs').innerHTML = `<div class="empty"><img src="${T().hero}" alt="">
     <h1>${esc(T().awaiting)}</h1><p class="label">web · arxiv · zenodo · github · your files · machine</p>
     <div class="sugg">${SUGG.map(s => `<button class="bevel">${esc(s)}</button>`).join('')}</div></div>`;
@@ -498,7 +510,7 @@ async function openChat(id) {
   if (!c) return newChat();
   chatId = id; $('#title').textContent = c.title; history.replaceState(null, '', '#' + id);
   $('#side').classList.remove('open'); setCtx(null);
-  renderHistory(c.messages); loadChats();
+  setSources(c.sources); renderHistory(c.messages); loadChats();
 }
 
 /* ---- messages ---- */
@@ -638,6 +650,8 @@ async function send(opts = {}) {
           cur = null; steps[ev.id] = stepEl(bot, label(ev.name, ev.args), '', 'run'); bot.appendChild(live);
         } else if (ev.type === 'tool_result') {
           const s = steps[ev.id]; if (s) { s.classList.remove('run'); s.querySelector('.body').textContent = ev.content; }
+        } else if (ev.type === 'source') {
+          srcMap[ev.n] = ev; if (cur) md(cur, curText);
         } else if (ev.type === 'usage') {
           setCtx(ev);
         } else if (ev.type === 'error') {
@@ -739,6 +753,24 @@ $('#settingsBtn').onclick = async () => { $('#instr').value = (await api('/api/s
 $('#mCancel').onclick = () => $('#modal').classList.remove('open');
 $('#mSave').onclick = async () => { await api('/api/settings', { method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify({ instructions: $('#instr').value }) }); $('#modal').classList.remove('open'); };
 $('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').classList.remove('open'); };
+/* ---- sources ---- */
+async function openSources() {
+  if (!chatId) return;
+  let list; try { list = await api(`/api/chats/${chatId}/sources`); } catch (e) { alert(e.message); return; }
+  setSources(list);
+  const kc = n => n < 1000 ? `${n} ch` : `${(n / 1000).toFixed(1)}k ch`;
+  const when = t => new Date(t * 1000).toLocaleString([], {dateStyle: 'short', timeStyle: 'short'});
+  $('#srcList').innerHTML = list.length ? list.map(s => `<div class="f"><b>S${s.n}</b>
+    <a ${s.url ? `href="${esc(s.url)}" target="_blank" rel="noopener noreferrer"` : ''} title="${esc(s.ref)}">${esc(s.title || s.ref)}</a>
+    <small>${esc(s.kind)}</small><small title="read: ${esc(s.coverage)}">${s.total ? `${kc(s.read)} / ${kc(s.total)}` : kc(s.read)}</small>
+    <small title="sha256 ${esc(s.sha || '')}">${when(s.fetched)}</small></div>`).join('')
+    : '<div class="f"><small>nothing read yet — search results alone are not sources</small></div>';
+  $('#srcInfo').textContent = `${list.length} source${list.length === 1 ? '' : 's'}`;
+  $('#srcModal').classList.add('open');
+}
+$('#srcBtn').onclick = openSources;
+$('#srcClose').onclick = () => $('#srcModal').classList.remove('open');
+$('#srcModal').onclick = e => { if (e.target.id === 'srcModal') $('#srcModal').classList.remove('open'); };
 $('#exportBtn').onclick = () => { if (chatId) location.href = `/api/chats/${chatId}/export.md`; };
 
 /* ---- workspace browser ---- */
@@ -808,7 +840,7 @@ addEventListener('dragleave', () => { if (--dragN <= 0) { dragN = 0; $('#drop').
 addEventListener('dragover', e => e.preventDefault());
 addEventListener('drop', e => { e.preventDefault(); dragN = 0; $('#drop').style.display = 'none'; addFiles([...e.dataTransfer.files]); });
 addEventListener('paste', e => { const f = [...(e.clipboardData?.files || [])]; if (f.length) { e.preventDefault(); addFiles(f); } });
-addEventListener('keydown', e => { if (e.key === 'Escape') { $('#modal').classList.remove('open'); $('#wsModal').classList.remove('open'); $('#reactorPanel').classList.remove('open'); } });
+addEventListener('keydown', e => { if (e.key === 'Escape') { $('#modal').classList.remove('open'); $('#wsModal').classList.remove('open'); $('#srcModal').classList.remove('open'); $('#reactorPanel').classList.remove('open'); } });
 location.hash.length > 1 ? openChat(location.hash.slice(1)) : newChat();
 </script>
 </body>
