@@ -19,6 +19,7 @@
 | [docs/bench-log.md](docs/bench-log.md) | замеры моделей на GB10 |
 | [docs/eval-log.md](docs/eval-log.md), [tests/eval/README.md](tests/eval/README.md) | стенд приёмки: кейсы с поломками, автопрогон, результаты |
 | [docs/ui-v2-plan.md](docs/ui-v2-plan.md) | web-интерфейс v2: принципы, архитектура, мокапы, что реализовано |
+| [research/README.md](research/README.md) | исследовательский чат на том же устройстве (необязательный, отдельный сервис) |
 
 ## Быстрый старт на новом устройстве
 
@@ -37,9 +38,12 @@ agent/        bin/ (support-ctl, support-priv, resolve, onboarding), mcp/ (targe
 stack/        compose.yaml + env/ (профили LLM), systemd/, net/ (netplan-профили lan/direct), workbench/ (Dockerfile песочницы)
 tests/        bench.py (tok/s, TTFT, tool-call), mcp_smoke.py, connectors_smoke.py (симуляторы устройств + песочница), eval/ (стенд приёмки)
 docs/         мануал (md + PDF, сборка `make manual`), DEPLOY, ARCHITECTURE, bench-log, eval-log, ui-v2-plan
+research/     исследовательский чат (FastAPI + MCP: веб, arXiv/Zenodo, GitHub, библиотека, рабочая папка с песочницей), свой install.sh; art/frames.py — арт тем
 build/        manual.sh
 ```
 
 ## Разработка
 
-Локально на Mac: правки → `make lint` → `make deploy HOST=gx10` (rsync + deploy.sh на устройстве) или на самом устройстве `support-ctl update` после `git push`. PDF мануала: `make manual` (pandoc + XeLaTeX + шрифты DejaVu).
+Локально на Mac: правки → `make lint` → `make deploy HOST=gx10` (rsync + deploy.sh на устройстве) или на самом устройстве `support-ctl update` после `git push`. PDF мануала: `make manual` (pandoc + XeLaTeX + шрифты DejaVu). Исследовательский чат: `cd research && make deploy HOST=spark` (rsync + `research/install.sh`), подробно — [research/README.md](research/README.md).
+
+Оформление: две темы в стиле пультов StarCraft — Terran (по умолчанию) и Zerg — общие для Workbench и исследовательского чата; рамки, фоны и иконки в `agent/ui/static/{frames,icons}` и `research/static/{frames,icons}`, рамки и фоны генерирует `research/art/frames.py` (numpy, результат в репозитории).

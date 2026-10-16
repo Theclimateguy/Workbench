@@ -95,6 +95,7 @@ rsync -a /Volumes/SSD/models/ admin@10.77.0.1:/opt/models/            # пото
 - **Версии** (OpenCode, vLLM, модели): правка `install/versions.lock` в репозитории → `support-ctl update` → для образа/моделей вручную `bootstrap.sh` после удаления соответствующего маркера (`sudo rm /var/lib/support/bootstrap/vllm-image.done`).
 - **ОС**: `sudo apt full-upgrade` — отдельно, перед выездом, с последующим `support-ctl bench` (минимум 60 tok/s на fast — норма 95).
 - Что ещё посмотреть: `support-ctl version`.
+- **Исследовательский чат** (необязательно, не нужен агенту): `~/Workbench/research/install.sh` — сервис на :8090, SearXNG в docker, пользователь `researcher` с сетевой оградой, Python-стек для скриптов (интернет при первой установке). С Mac: `cd research && make deploy HOST=<ssh>`. Пароль для браузеров не с этого устройства печатается один раз, хранится в `/etc/research/research.env`. Подробно — [research/README.md](../research/README.md).
 
 ## 5. Если что-то пошло не так
 

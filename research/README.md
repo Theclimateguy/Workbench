@@ -1,8 +1,10 @@
 # Research chat
 
 Personal research chatbot on the GB10 box. Uses whichever local LLM is running (`llm@fast` Qwen3.6-35B-A3B or
-`llm@deep` gpt-oss-120b) through the vLLM OpenAI API; tools are MCP servers. Separate from the Workbench support
-agent: own service, own port, own data.
+`llm@deep` gpt-oss-120b) through the vLLM OpenAI API; tools are MCP servers. Part of the Workbench repository
+(since 2026-10-16, history kept) but a separate product: own service, own port, own data, own installer; the
+Workbench `deploy.sh` does not install it. Shared with Workbench: the LLM stack, the offline library MCP and the
+StarCraft-style skins.
 
 ```
 browser ── :8090 ── app.py (FastAPI · SQLite history · uploads) ── vLLM 127.0.0.1:8000
@@ -35,7 +37,15 @@ the sidebar browses the workspace; the **⌬ Machine** toggle turns these tools 
 unload `fast` | `deep` | `nemotron`; switching stops the running profile, loads take 5–10 min; also used by the
 Workbench agent) · reasoning depth (off/low/med/high → `reasoning_effort` for gpt-oss, `enable_thinking` for
 Qwen/Nemotron) · edit last message, regenerate, copy · context meter · standing orders (custom instructions) ·
-KaTeX math · two themes, switched with ◐ in the sidebar (Terran: riveted gunmetal console; Zerg hive mind: chitin carapace, amber veins, Overmind/Abathur) — StarCraft-style console art rendered by `art/frames.py` into `static/frames/` (9-slice `border-image`), offline fonts Tektur / Philosopher / Play · desktop launcher `~/Desktop/research.desktop`.
+KaTeX math · desktop launcher `~/Desktop/research.desktop`.
+
+**Themes.** Two skins, switched with ◐ in the sidebar and kept in the browser: Terran (default; riveted gunmetal,
+teal glass, microscope icon) and Zerg hive mind (chitin carapace, amber glow, creep; Overmind / Abathur wording).
+The composer is a full-width bottom console like a StarCraft HUD; the top bar and sidebar have heavy frame edges,
+menus and modals light frames. Frames and floor tiles are `static/frames/*.png` (2x, 9-slice `border-image`),
+rendered by `art/frames.py` (numpy + pillow on the Mac, output committed; the Workbench UI uses copies of the
+same files). App icons in `static/icons/` (`icon-*` Terran, `zerg-*` Zerg; the tab icon follows the theme).
+Fonts offline: Tektur (Terran headings), Philosopher (Zerg headings), Play (text), JetBrains Mono.
 
 **Privacy.** Chats (`/var/lib/research/chats.db`) and uploaded files (`/var/lib/research/uploads/`) stay on the box and
 go only to the local LLM. What leaves the box: search queries and paper/repo/page lookups the model makes. The
@@ -65,4 +75,8 @@ ssh -N -L 18000:127.0.0.1:8000 <box> &      # the box's LLM
 LLM_URL=http://127.0.0.1:18000 RESEARCH_DATA=/tmp/rdata uvicorn app:app --port 18090
 ```
 
-Without SearXNG `web_search` fails; the other tools work from anywhere.
+Without SearXNG `web_search` fails; the other tools work from anywhere. Without `RESEARCH_RUN_AS` the machine
+tools run as you, in `$RESEARCH_DATA/workspace`, with no sandbox — development only.
+
+Regenerating the theme art: `python3 -m venv /tmp/art && /tmp/art/bin/pip install numpy pillow && /tmp/art/bin/python
+art/frames.py`, then copy `static/frames/*.png` to `../agent/ui/static/frames/` and bump the `?v=` in the CSS.

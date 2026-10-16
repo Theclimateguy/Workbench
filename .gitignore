@@ -11,5 +11,3 @@ build/*.pdf
 .DS_Store
 .claude/launch.json
 build/ui-assets
-# personal research chat: its own local git repo (research/.git), not part of Workbench
-research/
