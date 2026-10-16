@@ -1,7 +1,7 @@
 // Service worker: keeps the UI shell and the (immutable, versioned) vendor bundle available offline.
 // API calls are always network-only; model files are cached by Transformers.js itself (Cache API).
-const VERSION = "workbench-ui-v10";
-const SHELL = ["/", "/static/manifest.json", "/static/stt-worker.js", "/static/lib/marked.umd.js", "/static/terran.css", "/static/fonts/fonts.css", "/favicon.ico", "/static/icons/icon-32.png", "/static/icons/icon-48.png", "/static/icons/icon-192.png", "/static/icons/icon-512.png"];
+const VERSION = "workbench-ui-v12";
+const SHELL = ["/", "/static/manifest.json", "/static/stt-worker.js", "/static/lib/marked.umd.js", "/static/terran.css?v=2", "/static/fonts/fonts.css", "/static/fonts/themes.css?v=1", "/static/frames/terran-frame.png?v=1", "/static/frames/terran-panel.png?v=1", "/static/frames/terran-bg.png?v=1", "/static/frames/zerg-frame.png?v=1", "/static/frames/zerg-panel.png?v=1", "/static/frames/zerg-bg.png?v=1", "/static/icons/zerg-48.png?v=4", "/favicon.ico", "/static/icons/icon-32.png?v=4", "/static/icons/icon-48.png?v=4", "/static/icons/icon-192.png?v=4", "/static/icons/icon-512.png?v=4"];
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => {

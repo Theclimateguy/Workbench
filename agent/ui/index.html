@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Workbench</title>
 <link rel="manifest" href="/static/manifest.json">
-<link rel="icon" href="/favicon.ico?v=3" sizes="any">
-<link rel="icon" href="/static/icons/icon-32.png?v=3" type="image/png" sizes="32x32">
-<link rel="icon" href="/static/icons/icon-48.png?v=3" type="image/png" sizes="48x48">
-<link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=3">
+<link rel="icon" href="/favicon.ico?v=4" sizes="any">
+<link rel="icon" href="/static/icons/icon-32.png?v=4" type="image/png" sizes="32x32">
+<link rel="icon" href="/static/icons/icon-48.png?v=4" type="image/png" sizes="48x48">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=4">
 <meta name="theme-color" content="#04070b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -173,13 +173,15 @@
   @media (max-width: 1100px) { .panel { display:none } .panel.open { display:flex; position:absolute; left:56px; top:0; bottom:0; z-index:5; box-shadow:var(--shadow) } .dockToggle { display:inline-flex } .dock { display:none } .dock.open { display:flex; position:absolute; right:0; top:0; bottom:0; z-index:4; width:min(460px, 85vw) } .strip .mem, .strip .hostchip { display:none } }
   @media (max-width: 767px) { .rail { display:none } .dock.open { left:0; width:auto; top:30%; border-top:1px solid var(--bd2); border-radius:14px 14px 0 0 } .strip .modelchip .l2 { display:none } .perm .actions button { flex:1 } }
 </style>
+<script>try { document.documentElement.dataset.skin = localStorage.getItem("skin") === "zerg" ? "zerg" : "terran"; } catch {}</script>
 <link rel="stylesheet" href="/static/fonts/fonts.css">
-<link rel="stylesheet" href="/static/terran.css">
+<link rel="stylesheet" href="/static/fonts/themes.css?v=1">
+<link rel="stylesheet" href="/static/terran.css?v=2">
 </head>
 <body>
 <div class="app">
   <div class="strip" id="strip">
-    <div class="brand"><img src="/static/icons/icon-48.png" alt="">Workbench</div>
+    <div class="brand"><img src="/static/icons/icon-48.png?v=4" alt="">Workbench</div>
     <button type="button" class="ghost sm dockToggle" id="panelToggle" title="Сессии">☰</button>
     <span class="pill" id="devChip"><span class="dot"></span><span class="l">нет устройств</span></span>
     <span class="pill" id="linkChip" title="Порт RJ45"><span class="dot"></span><span class="l">линк</span></span>
@@ -195,7 +197,7 @@
     <div class="pill" id="profile" title="Профиль модели: fast — быстрый, deep — рассуждает дольше. Переключение 6–12 минут." style="padding:0; overflow:hidden; gap:0">
       <button type="button" class="ghost sm" data-prof="fast" style="border-radius:0; min-height:24px">fast</button><button type="button" class="ghost sm" data-prof="deep" style="border-radius:0; min-height:24px">deep</button><button type="button" class="ghost sm" data-prof="nemotron" style="border-radius:0; min-height:24px" title="Nemotron 3 Super 120B">nemo</button>
     </div>
-    <button type="button" class="ghost sm" id="theme" title="Светлая / тёмная тема" aria-label="Тема"><svg class="i" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+    <button type="button" class="ghost sm" id="theme" title="Оформление: Terran / Zerg" aria-label="Оформление"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg></button>
     <button type="button" class="ghost sm dockToggle" id="dockToggle" title="Панель вкладок">▣</button>
     <button type="button" class="ghost sm" id="installPwa" style="display:none" title="Установить как приложение">Установить</button>
   </div>
@@ -290,9 +292,24 @@ const EFFECT = { run_change: "Команда выполнится на устр�
 
 // ---------- global state ----------
 let sid = location.hash.slice(1) || null, lastHTML = "", lastData = null, busySince = null, stateCache = null, targetName = "";
-// Terran theme (static/terran.css) is dark only; the light/dark toggle is hidden
-const applyTheme = t => { document.documentElement.dataset.theme = t; };
-applyTheme("dark");
+// Skins (static/terran.css): Terran (default) / Zerg, switched by the #theme button; colours stay dark only
+const SKINS = ["terran", "zerg"];
+function applySkin(k) {
+  document.documentElement.dataset.skin = k;
+  try { localStorage.setItem("skin", k); } catch {}
+  const b = document.getElementById("theme");
+  if (b) b.title = "Оформление: " + (k === "zerg" ? "Zerg" : "Terran") + " (нажмите, чтобы сменить)";
+  document.querySelectorAll(".brand img").forEach(i => { i.src = k === "zerg" ? "/static/icons/zerg-48.png?v=4" : "/static/icons/icon-48.png?v=4"; });
+  document.querySelectorAll('link[rel~="icon"]').forEach(l => {   // tab icon follows the skin
+    l.dataset.orig = l.dataset.orig || l.getAttribute("href");
+    l.setAttribute("href", k === "zerg" ? "/static/icons/zerg-48.png?v=4" : l.dataset.orig);
+    if (k === "zerg") l.removeAttribute("type");
+  });
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = k === "zerg" ? "#030103" : "#020406";
+}
+document.documentElement.dataset.theme = "dark";
+applySkin(document.documentElement.dataset.skin || "terran");
+document.getElementById("theme").onclick = () => applySkin(SKINS[(SKINS.indexOf(document.documentElement.dataset.skin) + 1) % SKINS.length]);
 
 // ---------- approval mode (graduated autonomy as a UI element, not a setting) ----------
 let mode = store.get("mode", "ask");
