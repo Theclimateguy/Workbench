@@ -1,0 +1,171 @@
+{
+  "about": "Research-chat eval: the same tasks and tools for every LLM profile. Run with eval/run.py (see research/README.md). Per turn: text, then expect = hard checks (all must pass) and optional soft = same checks, reported but not failing the task. Checks: answer = regexes that must all match the final answer (case-insensitive; '@NAME' = patterns below); answer_not = regexes that must not match; sources = regexes that must each match the ref or URL of some source in GET /api/chats/{id}/sources; read = [{source, anchor}]: the anchor text (whitespace-insensitive) must appear in a tool result of THIS turn that belongs to a matching source (the reading tool itself or source_read), i.e. the model actually read the part holding the fact; tools = groups of tool names, each group needs one of its tools used in this turn. Facts checked on 2026-10-16 against the texts the tools return (arXiv HTML, Wikipedia, GitHub, NOAA GML).",
+  "patterns": {
+    "NOT_FOUND": "(not|n't|no longer|never)\\s+(be\\s+)?(been\\s+)?(found|find|exist|locate|retriev|access|verif|available|report|mention|contain|include|present|appear|describe|list)|does(n't| not) (exist|appear|have|include|report|contain|mention)|no (such|record|entry|paper|results?|mention|model|variant)|unable to (find|locate|retrieve|verify)|cannot (find|locate|retrieve|verify)|invalid|nonexistent|non-existent|isn't (in|part of)"
+  },
+  "tasks": [
+    {
+      "id": "attn_schedule",
+      "kind": "paper detail (>12k chars)",
+      "tools": true, "machine": false,
+      "turns": [{
+        "text": "In the Transformer paper \"Attention Is All You Need\" (arXiv 1706.03762): on what hardware did the authors train, and for how many steps and how long was the big model trained? Answer from the paper and cite it.",
+        "expect": {
+          "answer": ["P100", "300[,\\s.]?000|300\\s?k\\b", "3\\.5\\s*days"],
+          "sources": ["1706\\.03762"],
+          "read": [{"source": "1706\\.03762", "anchor": "trained for 300,000 steps"}]
+        }
+      }]
+    },
+    {
+      "id": "bert_pretrain",
+      "kind": "paper detail (appendix, ~52k chars in)",
+      "tools": true, "machine": false,
+      "turns": [{
+        "text": "In the BERT paper (arXiv 1810.04805), what batch size and how many training steps were used for pre-training, and over how many steps was the learning rate warmed up? Take the numbers from the paper itself and cite it.",
+        "expect": {
+          "answer": ["\\b256\\b", "1[,\\s.]?000[,\\s.]?000|\\b1\\s?M\\b|one million|10\\^6|10\\^\\{6\\}", "\\b10[,\\s.]?000\\b|\\b10\\s?k\\b"],
+          "sources": ["1810\\.04805"],
+          "read": [{"source": "1810\\.04805", "anchor": "batch size of 256 sequences"}]
+        }
+      }]
+    },
+    {
+      "id": "attn_followup",
+      "kind": "multi-turn follow-up (source_read)",
+      "tools": true, "machine": false,
+      "note": "Turn 1 needs the second window of the paper (section 5.3, ~20k chars in). In turn 2 that tool output is trimmed to 2000 chars, so the decoding details (section 6.1, ~23k chars in) must be re-read, ideally with source_read, not answered from memory.",
+      "turns": [
+        {
+          "text": "Open the Transformer paper (arXiv 1706.03762). Which optimizer and learning-rate schedule did they use? Give the formula and the value of warmup_steps.",
+          "expect": {
+            "answer": ["Adam", "\\b4[,\\s]?000\\b"],
+            "sources": ["1706\\.03762"],
+            "read": [{"source": "1706\\.03762", "anchor": "We used the Adam optimizer"}]
+          }
+        },
+        {
+          "text": "In the same paper: which beam size and length penalty alpha were used for decoding, and what label smoothing value was used in training?",
+          "expect": {
+            "answer": ["beam[^\\n]{0,40}?\\b4\\b|\\b4\\b[^\\n]{0,25}beam|beam[^\\n]*\\|[\\s\\S]{0,300}?\\|\\s*\\**4\\**\\s*\\|", "0\\.6", "0\\.1"],
+            "read": [{"source": "1706\\.03762", "anchor": "length penalty"}]
+          },
+          "soft": {"tools": [["source_read"]]}
+        }
+      ]
+    },
+    {
+      "id": "keeling_wiki",
+      "kind": "web fact + citation",
+      "tools": true, "machine": false,
+      "turns": [{
+        "text": "Using the web, find out from Wikipedia in which year the continuous CO2 measurements at Mauna Loa behind the Keeling Curve began, and who started them. Cite the Wikipedia page you read.",
+        "expect": {
+          "answer": ["1958", "Charles\\s+(David\\s+)?Keeling|C\\.\\s*D\\.\\s*Keeling"],
+          "sources": ["wikipedia\\.org/wiki/(Keeling_Curve|Charles_David_Keeling|Mauna_Loa_Observatory)"],
+          "read": [{"source": "wikipedia\\.org/wiki/(Keeling_Curve|Charles_David_Keeling|Mauna_Loa_Observatory)", "anchor": "1958"}]
+        }
+      }]
+    },
+    {
+      "id": "paris_dates",
+      "kind": "web fact + citation",
+      "tools": true, "machine": false,
+      "turns": [{
+        "text": "When was the Paris Agreement adopted and when did it enter into force? Use the web and cite what you read.",
+        "expect": {
+          "answer": ["12 December 2015|December 12,? 2015|2015-12-12|12\\.12\\.2015", "4 November 2016|November 4,? 2016|2016-11-04|04?\\.11\\.2016"],
+          "sources": ["wikipedia\\.org/wiki/Paris_Agreement|unfccc\\.int|un\\.org"],
+          "read": [{"source": "wikipedia\\.org/wiki/Paris_Agreement|unfccc\\.int|un\\.org", "anchor": "November 2016"}]
+        }
+      }]
+    },
+    {
+      "id": "requests_defaults",
+      "kind": "GitHub file",
+      "tools": true, "machine": false,
+      "turns": [{
+        "text": "In the GitHub repository psf/requests, read src/requests/adapters.py. What are the default values of DEFAULT_POOLSIZE, DEFAULT_RETRIES and DEFAULT_POOLBLOCK?",
+        "expect": {
+          "answer": ["POOLSIZE[^\\n]{0,40}?\\b10\\b", "RETRIES[^\\n]{0,40}?\\b0\\b", "POOLBLOCK[^\\n]{0,40}?False"],
+          "sources": ["github:psf/requests/src/requests/adapters\\.py"],
+          "read": [{"source": "github:psf/requests/src/requests/adapters\\.py", "anchor": "DEFAULT_POOLSIZE = 10"}]
+        }
+      }]
+    },
+    {
+      "id": "numpy_tag",
+      "kind": "GitHub file at a tag",
+      "tools": true, "machine": false,
+      "note": "At v2.0.0 requires-python is >=3.9; on main it is >=3.12, so reading the default branch gives a wrong answer.",
+      "turns": [{
+        "text": "In the numpy/numpy repository at the git tag v2.0.0, what does pyproject.toml declare as requires-python, and which build backend does it use? Read the file at that tag.",
+        "expect": {
+          "answer": [">=\\s*3\\.9\\b", "mesonpy|meson-python"],
+          "sources": ["github:numpy/numpy/pyproject\\.toml@v2\\.0\\.0"],
+          "read": [{"source": "github:numpy/numpy/pyproject\\.toml@v2\\.0\\.0", "anchor": "version = \"2.0.0\""}]
+        }
+      }]
+    },
+    {
+      "id": "primes_sum",
+      "kind": "computation in the workspace",
+      "tools": false, "machine": true,
+      "turns": [{
+        "text": "Write a Python script in the workspace folder eval-tmp/ that computes the sum of all prime numbers below 2,000,000, run it, and report the exact sum.",
+        "expect": {
+          "answer": ["142[,\\s.]?913[,\\s.]?828[,\\s.]?922"],
+          "tools": [["run", "job_start"]]
+        }
+      }]
+    },
+    {
+      "id": "co2_2023",
+      "kind": "download + computation",
+      "tools": false, "machine": true,
+      "note": "NOAA GML co2_mm_mlo.csv, mean of the 12 monthly 'average' values of 2023 = 421.08 ppm (2026-10-16; NOAA may revise slightly).",
+      "turns": [{
+        "text": "Download NOAA's Mauna Loa monthly CO2 file https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_mm_mlo.csv into the workspace folder eval-tmp/, then compute with a script the mean of the monthly 'average' column for the 12 months of 2023. Report the value in ppm with two decimals.",
+        "expect": {
+          "answer": ["421\\.(0[5-9]|1[01])"],
+          "tools": [["run", "job_start"]]
+        },
+        "soft": {"sources": ["gml\\.noaa\\.gov/.*co2_mm_mlo\\.csv"]}
+      }]
+    },
+    {
+      "id": "flashattn_find",
+      "kind": "paper search + open",
+      "tools": true, "machine": false,
+      "turns": [{
+        "text": "Find the arXiv paper that introduced FlashAttention (IO-aware exact attention). Give its arXiv id, its first author and the year. Open the paper before answering.",
+        "expect": {
+          "answer": ["2205\\.14135", "Tri\\s+Dao", "2022"],
+          "sources": ["2205\\.14135"]
+        }
+      }]
+    },
+    {
+      "id": "fake_arxiv",
+      "kind": "not findable (no such paper)",
+      "tools": true, "machine": false,
+      "turns": [{
+        "text": "Summarise the main result of the arXiv paper 2401.99999.",
+        "expect": {"answer": ["@NOT_FOUND"]}
+      }]
+    },
+    {
+      "id": "fake_variant",
+      "kind": "not findable (no such detail in a real paper)",
+      "tools": true, "machine": false,
+      "note": "The paper has base and big models only; there is no 'huge' model.",
+      "turns": [{
+        "text": "In \"Attention Is All You Need\" (arXiv 1706.03762), what BLEU score does the paper report for its 'Transformer (huge)' model with 32 layers on WMT 2014 English-German? Check the paper.",
+        "expect": {
+          "answer": ["@NOT_FOUND"],
+          "sources": ["1706\\.03762"]
+        }
+      }]
+    }
+  ]
+}

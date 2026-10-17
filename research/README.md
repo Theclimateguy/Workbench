@@ -84,6 +84,46 @@ turns all internet tools off for a message.
 **Files.** PDF, DOCX, HTML and any text/code format, up to 50 MB. The first 40k chars of each file go into the
 prompt; the model reads the rest with `read_upload`. Images are not supported.
 
+## Model eval
+
+`eval/` compares the LLM profiles on the same tasks, tools and tool loop, through the chat's own API, so model roles
+are decided by measurement. `eval/tasks.json` has 12 tasks: paper details far past the first 12k-char window
+(Transformer section 5.2, BERT appendix A.2), a two-turn follow-up whose second answer needs `source_read` because
+the first turn's tool output is trimmed by then, web facts with a citation (Wikipedia), GitHub files (one at a tag,
+where the default branch gives a wrong answer), a computation and a download + computation in the workspace,
+an arXiv search, and two "not findable" questions (no such paper, no such model in a real paper) that must say so.
+Each turn is scored on the final answer (regexes), the source ledger (`/api/chats/{id}/sources`: the expected
+`arxiv:…`, GitHub path or URL is a source) and *must have read*: the passage holding the fact appeared in a tool
+result of that turn (from the reading tool or `source_read`), so an answer from memory fails even when it is right.
+Soft checks (e.g. used `source_read` rather than fetching again) are reported but do not fail a task.
+
+`eval/run.py` (stdlib + httpx) creates a chat per task, streams each turn, scores it, deletes the chat, and writes
+per model `<stamp>-<profile>.json` / `.md` and a combined `report.md` (task × model: pass/fail, LLM steps, tool calls,
+tool errors, repeated calls, wall time; failed checks, tool sequence and answer excerpt per task; the `/api/tool-stats`
+delta of the run). Results go to `~/research-eval` on the box — outside `~/Workbench`, which `make deploy` syncs
+with `--delete`. Committed reports: `eval/results/`.
+
+On the box (after `make deploy`, or `rsync -a eval/ spark:~/Workbench/research/eval/`):
+
+```bash
+cd ~/Workbench/research
+/opt/research/venv/bin/python eval/run.py                       # the model loaded now (~10-20 min)
+/opt/research/venv/bin/python eval/run.py --tasks attn_followup,numpy_tag
+/opt/research/venv/bin/python eval/run.py --models fast deep nemotron --switch   # all three, ~1-2 h
+/opt/research/venv/bin/python eval/run.py report               # rebuild report.md from saved runs
+```
+
+`--switch` loads each profile in turn through `POST /api/models/{profile}` and waits until `/api/models` shows it
+(5–10 min per switch), strictly one model at a time; it unloads whatever is running — someone using the chat or
+the Workbench agent loses the model meanwhile — and loads the original profile again at the end
+(`--no-restore` skips that). Without `--switch` the runner refuses to touch the loaded model. Other options:
+`--reasoning off|low|medium|high` (default medium, as the chat's menu), `--keep` (keep the chats to read them in
+the UI), `--turn-timeout S` (default 900: the stream is cut and the turn fails — the chat sets no `max_tokens`,
+so a model stuck in a reasoning loop would otherwise generate until the context is full), `--base URL --password …` (from elsewhere; non-local clients need the web password). Run it on an
+otherwise idle chat: the tool-stats delta counts every call on that model meanwhile. Results also depend on the
+outside world (arXiv, GitHub, Wikipedia, NOAA availability): compare models from runs close in time, and rerun a
+task before blaming a model for an outage. The workspace tasks leave their files in `/ws/eval-tmp/`.
+
 ## Install / update (on the box)
 
 ```bash
