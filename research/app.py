@@ -71,6 +71,9 @@ LIBRARY_SERVER = (os.environ.get("LIBRARY_PYTHON", "/opt/support/venv/bin/python
                   os.environ.get("LIBRARY_SERVER", "/opt/support/mcp/library.py"))
 MAX_STEPS = 16            # tool rounds per answer
 MAX_STEPS_MACHINE = 48    # with the machine tools (write, run, fix, rerun takes many rounds)
+# completion tokens per LLM step (reasoning + text + tool call): without a cap a model stuck in a reasoning loop
+# generated for 37 min (eval co2_2023, Qwen fast) and held the GPU
+MAX_TOKENS = int(os.environ.get("RESEARCH_MAX_TOKENS", "16384"))
 FILE_INLINE = 40_000      # chars of each uploaded file put straight into the prompt; the rest via read_upload
 OLD_TOOL_CHARS = 2_000    # tool results from earlier turns are cut to this when the history is replayed
 RESULT_MAX = 24_000       # hard cap on one tool result (the servers page at ~12k themselves)
@@ -94,8 +97,8 @@ and (when present) the offline library of the user's own documents (library_sear
   fetch_url its open-access PDF from doi_lookup; when it is closed, say you only read the abstract.
 - Search results are only snippets. Open what you rely on (fetch_url, doi_lookup, arxiv_paper, zenodo_record,
   gh_read, library_read) before stating facts from it.
-- Everything you open is saved as a numbered source of this chat ("[saved as source S3: …]"). Cite it right after the
-  claim as [S3] (the chat turns it into a link); cite anything else as [title](url). Say plainly when something
+- Everything you open is saved as a numbered source of this chat (its result starts with "[source S3]"). Cite it
+  right after the claim as [S3] (the chat turns it into a link); cite anything else as [title](url). Say plainly when something
   was not found or could not be verified.
 - Tool output of earlier turns is trimmed: re-read a source with source_read (sources_list shows them) instead
   of relying on memory or fetching it again.
@@ -701,6 +704,8 @@ def to_llm(history: list[dict]) -> list[dict]:
     last_user = max((i for i, m in enumerate(history) if m["role"] == "user"), default=0)
     out = []
     for i, m in enumerate(history):
+        if m["role"] == "assistant" and not m.get("content") and not m.get("tool_calls"):
+            continue  # reasoning only (cut off by MAX_TOKENS or Stop): nothing the model can use
         msg = {"role": m["role"], "content": m.get("content") or ""}
         if m.get("tool_calls"):
             msg["tool_calls"] = m["tool_calls"]
@@ -818,17 +823,19 @@ async def send(cid: str, request: Request):
             tools = (web if use_tools else []) + (machine + [UPLOAD_COPY_TOOL] if use_machine else []) + [UPLOAD_TOOL] + SOURCE_TOOLS
             schemas = {s["function"]["name"]: s["function"]["parameters"] or {} for s in tools}
             seen, recent, errors = {}, [], 0  # repeat detection within this answer
+            forced = False  # after a step ran into MAX_TOKENS: one more step, no reasoning, no tools
             for _ in range(MAX_STEPS_MACHINE if use_machine else MAX_STEPS):
                 body = {"model": model, "messages": [{"role": "system", "content": system}] + to_llm(history),
-                        "stream": True, "stream_options": {"include_usage": True}, "tools": tools,
-                        **reasoning_params(root, level)}
-                content, reasoning, calls = "", "", {}
+                        "stream": True, "stream_options": {"include_usage": True}, "max_tokens": MAX_TOKENS,
+                        **({} if forced else {"tools": tools}), **reasoning_params(root, "off" if forced else level)}
+                content, reasoning, calls, finish = "", "", {}, ""
                 try:
                     async for chunk in llm_stream(client, body):
                         if chunk.get("usage"):
                             yield sse({"type": "usage", **chunk["usage"], "ctx": m.get("max_model_len")})
                         if not chunk.get("choices"):
                             continue
+                        finish = chunk["choices"][0].get("finish_reason") or finish
                         d = chunk["choices"][0].get("delta", {})
                         r = d.get("reasoning") or d.get("reasoning_content")
                         if r:
@@ -847,13 +854,20 @@ async def send(cid: str, request: Request):
                     amsg = {"role": "assistant", "content": content, "model": root}
                     if reasoning:
                         amsg["reasoning"] = reasoning
-                    if calls:
+                    if calls and finish != "length":  # a call cut off by the limit is incomplete
                         amsg["tool_calls"] = [{"id": c["id"] or f"call_{uuid.uuid4().hex[:8]}", "type": "function",
                                                "function": {"name": c["name"], "arguments": c["args"] or "{}"}}
                                               for c in calls.values()]
                     if content or reasoning or calls:
                         save_message(cid, amsg)
                         history.append(amsg)
+                if finish == "length":  # runaway generation (seen: Qwen looping in its reasoning for 37 min)
+                    if forced:
+                        yield sse({"type": "text", "text": f"\n\n_(stopped: this step hit the {MAX_TOKENS}-token limit)_"})
+                        break
+                    forced = True
+                    yield sse({"type": "text", "text": f"_(reasoning hit the {MAX_TOKENS}-token limit; answering from what was read)_\n\n"})
+                    continue
                 if not calls:
                     break
                 for tc in amsg["tool_calls"]:
@@ -886,7 +900,7 @@ async def send(cid: str, request: Request):
                         if ok and (parsed := sources.parse(name, args, result)):
                             with db() as con:
                                 src = sources.record(con, cid, name, parsed)
-                            result += f"\n\n[saved as source S{src['n']}: cite it as [S{src['n']}]]"
+                            result = f"[source S{src['n']}]\n" + result
                         if ok and name not in MACHINE_TOOLS:
                             seen[key] = True
                     recent.append(key)
