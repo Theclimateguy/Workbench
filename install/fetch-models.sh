@@ -42,8 +42,8 @@ fetch_tiktoken() {  # gpt-oss (Harmony) needs the tiktoken vocab files at runtim
 
 case "$want" in
   fast) fetch "$MODEL_FAST" ;;
-  deep) fetch "$MODEL_DEEP"; fetch_tiktoken; [ -n "${MODEL_DEEP_DRAFT:-}" ] && fetch "$MODEL_DEEP_DRAFT" ;;
+  deep) fetch "$MODEL_DEEP"; fetch_tiktoken; if [ -n "${MODEL_DEEP_DRAFT:-}" ]; then fetch "$MODEL_DEEP_DRAFT"; fi ;;
   nemotron) fetch "$MODEL_NEMOTRON"; fetch "$MODEL_NEMOTRON_DRAFT" ;;
-  all)  fetch "$MODEL_FAST"; fetch "$MODEL_DEEP"; fetch_tiktoken; [ -n "${MODEL_DEEP_DRAFT:-}" ] && fetch "$MODEL_DEEP_DRAFT" ;;
+  all)  fetch "$MODEL_FAST"; fetch "$MODEL_DEEP"; fetch_tiktoken; if [ -n "${MODEL_DEEP_DRAFT:-}" ]; then fetch "$MODEL_DEEP_DRAFT"; fi ;;
   *) echo "usage: $0 fast|deep|nemotron|all" >&2; exit 1 ;;
 esac
